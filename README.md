@@ -1,11 +1,38 @@
-# Simple CRUD
+# Department Financial Records, Collections, Attendance, and Reporting Information System
 
-A simple CRUD application built with Node.js and Express.
+## Technology Track
+Track 1: Microsoft Enterprise Stack
 
-## Run locally
-1. Run the startup file: start.cmd
-2. Open http://localhost:3000
+## Technology Used
+- ASP.NET Core
+- Entity Framework Core
+- MySQL
+- Pomelo.EntityFrameworkCore.MySql
+- JWT Authentication
+- Swagger / OpenAPI
+- Vue.js
+- Vuetify
+- Vite
+- Axios
+- .NET MAUI (for mobile support)
+- Git
 
-## If you prefer the terminal
-1. npm install
-2. npm start
+## Project Structure
+- `backend/DepartmentFinancialRecords.API` - ASP.NET Core Web API project
+- `frontend` - Vue.js + Vuetify frontend scaffold
+
+## How to Run
+### Backend
+1. Install .NET SDK.
+2. Update `backend/DepartmentFinancialRecords.API/appsettings.json` with your MySQL connection.
+3. Run the API project from the `backend/DepartmentFinancialRecords.API` folder.
+
+### Frontend
+1. Install Node.js and npm.
+2. Run `npm install` in `frontend`.
+3. Run `npm run dev` in `frontend`.
+
+## Notes
+- The backend project uses JWT-based authentication and Swagger for API documentation.
+- The frontend is a starter scaffold for the Track 1 UI.
+- Database migrations and detailed modules still need to be implemented.

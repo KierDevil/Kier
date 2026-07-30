@@ -1,0 +1,23 @@
+# Node modules
+/frontend/node_modules
+
+# Build output
+/backend/bin
+/backend/obj
+
+# Vite build output
+/frontend/dist
+
+# Visual Studio files
+.vs/
+*.user
+*.suo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
