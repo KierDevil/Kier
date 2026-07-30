@@ -32,6 +32,15 @@ Track 1: Microsoft Enterprise Stack
 2. Run `npm install` in `frontend`.
 3. Run `npm run dev` in `frontend`.
 
+### One-step Start
+From the project root, run:
+
+```powershell
+start.cmd
+```
+
+This script will open separate terminals for the backend and frontend.
+
 ## Notes
 - The backend project uses JWT-based authentication and Swagger for API documentation.
 - The frontend is a starter scaffold for the Track 1 UI.
