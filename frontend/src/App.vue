@@ -328,111 +328,110 @@
 
       <section v-else-if="activeView === 'attendance'" class="view-stack">
         <section class="qr-scanner-grid">
-          <form class="panel form-panel" @submit.prevent="addAttendance">
-            <h2>Manual Attendance</h2>
-            <label>
-              Event
-              <input v-model="attendanceForm.event" type="text" required />
-            </label>
-            <label>
-              Student
-              <select v-model.number="attendanceForm.studentId">
-                <option v-for="student in students" :key="student.id" :value="student.id">{{ student.name }}</option>
-              </select>
-            </label>
-            <label>
-              Status
-              <select v-model="attendanceForm.status">
-                <option>Present</option>
-                <option>Late</option>
-                <option>Absent</option>
-                <option>Excused</option>
-              </select>
-            </label>
-            <button type="submit" class="primary-action">Save Attendance</button>
-          </form>
-
           <section class="panel scanner-panel">
             <div class="panel-heading">
               <div>
-                <h2>QR / RFID Scanner</h2>
-                <span>Scan a QR code or tap an RFID card reader</span>
+                <h2>Fast Attendance</h2>
+                <span>RFID, QR, or student ID number</span>
               </div>
               <button type="button" @click="scannerActive ? stopQrScanner() : startQrScanner()">
                 {{ scannerActive ? 'Stop Camera' : 'Start Camera' }}
               </button>
             </div>
             <div class="scanner-body">
-              <video ref="scannerVideo" class="scanner-video" autoplay muted playsinline></video>
               <div class="scanner-controls">
-              <label>
-                Event
-                <input v-model="scanForm.eventTitle" type="text" />
-              </label>
-              <label>
-                Opens
-                <input v-model="scanForm.openAt" type="datetime-local" />
-              </label>
-              <label>
-                Late Starts
-                <input v-model="scanForm.lateAt" type="datetime-local" />
-              </label>
-              <label>
-                Closes
-                <input v-model="scanForm.closeAt" type="datetime-local" />
-              </label>
-              <label>
-                Fine Per Late Minute
-                <input v-model.number="scanForm.finePerLateMinute" type="number" min="0" step="1" />
-              </label>
-              <label>
-                Max Late Fine
-                <input v-model.number="scanForm.maxLateFine" type="number" min="0" step="1" />
-              </label>
-              <label>
-                Status
-                <select v-model="scanForm.status">
-                    <option>Present</option>
-                    <option>Late</option>
-                    <option>Absent</option>
-                    <option>Excused</option>
-                  </select>
-                </label>
-                <label>
-                  Fast Scan: QR / RFID / Student ID
-                  <input
-                    ref="quickScanInput"
-                    v-model="quickScanValue"
-                    type="text"
-                    placeholder="Tap RFID, scan QR text, or type student ID"
-                    @keydown.enter.prevent="recordAnyScan(quickScanValue)"
-                  />
-                </label>
-                <button type="button" class="primary-action" @click="recordAnyScan(quickScanValue)">Record Fast Scan</button>
-                <label>
-                  Manual QR / Student ID
-                  <input
-                    v-model="manualQr"
-                    type="text"
-                    placeholder="KIER:2026-001 or 2026-001"
-                    @keydown.enter.prevent="recordQrScan(manualQr)"
-                  />
-                </label>
-                <button type="button" class="secondary-action" @click="recordQrScan(manualQr)">Record ID / QR</button>
-                <label>
-                  Take QR Photo
-                  <input type="file" accept="image/*" capture="environment" @change="recordQrPhoto" />
-                </label>
-                <label>
-                  RFID Reader
-                  <input
-                    v-model="manualRfid"
-                    type="text"
-                    placeholder="Focus here, then tap RFID card"
-                    @keyup.enter="recordRfidScan(manualRfid)"
-                  />
-                </label>
-                <button type="button" class="secondary-action" @click="recordRfidScan(manualRfid)">Record RFID</button>
+                <div class="fast-scan-strip">
+                  <label>
+                    Fast Scan
+                    <input
+                      ref="quickScanInput"
+                      v-model="quickScanValue"
+                      type="text"
+                      placeholder="Tap RFID, scan QR, or type student ID"
+                      @keydown.enter.prevent="recordAnyScan(quickScanValue)"
+                    />
+                  </label>
+                  <button type="button" class="primary-action" @click="recordAnyScan(quickScanValue)">Record</button>
+                </div>
+
+                <details class="scan-settings">
+                  <summary>
+                    <span>Settings</span>
+                    <strong>{{ scanForm.eventTitle }} - {{ scanForm.status }}</strong>
+                  </summary>
+                  <div class="compact-grid">
+                    <label>
+                      Event
+                      <input v-model="scanForm.eventTitle" type="text" />
+                    </label>
+                    <label>
+                      Status
+                      <select v-model="scanForm.status">
+                        <option>Present</option>
+                        <option>Late</option>
+                        <option>Absent</option>
+                        <option>Excused</option>
+                      </select>
+                    </label>
+                  </div>
+
+                  <div class="compact-grid three">
+                    <label>
+                      Opens
+                      <input v-model="scanForm.openAt" type="datetime-local" />
+                    </label>
+                    <label>
+                      Late
+                      <input v-model="scanForm.lateAt" type="datetime-local" />
+                    </label>
+                    <label>
+                      Closes
+                      <input v-model="scanForm.closeAt" type="datetime-local" />
+                    </label>
+                  </div>
+
+                  <div class="compact-grid">
+                    <label>
+                      Fine / Min
+                      <input v-model.number="scanForm.finePerLateMinute" type="number" min="0" step="1" />
+                    </label>
+                    <label>
+                      Max Fine
+                      <input v-model.number="scanForm.maxLateFine" type="number" min="0" step="1" />
+                    </label>
+                  </div>
+                </details>
+
+                <div class="scan-fallbacks">
+                  <label>
+                    ID / QR
+                    <input
+                      v-model="manualQr"
+                      type="text"
+                      placeholder="KIER:2026-001"
+                      @keydown.enter.prevent="recordQrScan(manualQr)"
+                    />
+                  </label>
+                  <button type="button" class="secondary-action" @click="recordQrScan(manualQr)">ID / QR</button>
+                  <label>
+                    RFID
+                    <input
+                      v-model="manualRfid"
+                      type="text"
+                      placeholder="Tap card"
+                      @keyup.enter="recordRfidScan(manualRfid)"
+                    />
+                  </label>
+                  <button type="button" class="secondary-action" @click="recordRfidScan(manualRfid)">RFID</button>
+                  <label class="photo-input">
+                    QR Photo
+                    <input type="file" accept="image/*" capture="environment" @change="recordQrPhoto" />
+                  </label>
+                </div>
+              </div>
+              <div class="camera-slot" :class="{ idle: !scannerActive }">
+                <video v-show="scannerActive" ref="scannerVideo" class="scanner-video" autoplay muted playsinline></video>
+                <span v-if="!scannerActive">Camera off</span>
               </div>
               <p class="scanner-message">{{ scannerMessage }}</p>
               <transition name="scan-pop">
@@ -445,6 +444,32 @@
               </transition>
             </div>
           </section>
+
+          <details class="panel manual-panel">
+            <summary>Manual Attendance</summary>
+            <form class="manual-form" @submit.prevent="addAttendance">
+              <label>
+                Event
+                <input v-model="attendanceForm.event" type="text" required />
+              </label>
+              <label>
+                Student
+                <select v-model.number="attendanceForm.studentId">
+                  <option v-for="student in students" :key="student.id" :value="student.id">{{ student.name }}</option>
+                </select>
+              </label>
+              <label>
+                Status
+                <select v-model="attendanceForm.status">
+                  <option>Present</option>
+                  <option>Late</option>
+                  <option>Absent</option>
+                  <option>Excused</option>
+                </select>
+              </label>
+              <button type="submit" class="primary-action">Save</button>
+            </form>
+          </details>
         </section>
 
         <section class="panel">
@@ -1817,8 +1842,8 @@ select {
 
 .qr-scanner-grid {
   display: grid;
-  grid-template-columns: 320px minmax(0, 1fr);
-  gap: 20px;
+  grid-template-columns: 1fr;
+  gap: 12px;
 }
 
 .panel {
@@ -1968,29 +1993,45 @@ tbody tr:hover {
 
 .scanner-body {
   display: grid;
-  grid-template-columns: minmax(260px, 420px) minmax(240px, 1fr);
-  gap: 18px;
-  padding: 20px;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 280px);
+  gap: 12px;
+  padding: 16px;
+}
+
+.camera-slot {
+  display: grid;
+  min-height: 170px;
+  overflow: hidden;
+  place-items: center;
+  border: 1px solid #ccd6db;
+  border-radius: 8px;
+  background: #142027;
+  color: #9fb0b8;
+  font-weight: 900;
+}
+
+.camera-slot.idle {
+  min-height: 112px;
+  background: #eef4f6;
+  color: #60717a;
 }
 
 .scanner-video {
   width: 100%;
-  min-height: 280px;
-  border: 1px solid #ccd6db;
-  border-radius: 8px;
-  background: #142027;
+  height: 100%;
+  min-height: 170px;
   object-fit: cover;
 }
 
 .scanner-controls {
   display: grid;
-  gap: 14px;
+  gap: 10px;
   align-content: start;
 }
 
 .scanner-controls label {
   display: grid;
-  gap: 7px;
+  gap: 5px;
   color: #60717a;
   font-size: 0.82rem;
   font-weight: 800;
@@ -2001,11 +2042,137 @@ tbody tr:hover {
   width: 100%;
 }
 
+.fast-scan-strip {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 118px;
+  gap: 10px;
+  align-items: end;
+  border: 1px solid #b9d5ce;
+  border-radius: 8px;
+  padding: 12px;
+  background: #f3fbf8;
+}
+
+.fast-scan-strip input {
+  min-height: 44px;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.compact-grid,
+.scan-fallbacks {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.scan-settings {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #d8e3e8;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.scan-settings summary,
+.manual-panel summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  padding: 12px 14px;
+  color: #60717a;
+  font-size: 0.82rem;
+  font-weight: 900;
+  list-style: none;
+}
+
+.scan-settings summary::-webkit-details-marker,
+.manual-panel summary::-webkit-details-marker {
+  display: none;
+}
+
+.scan-settings summary::after,
+.manual-panel summary::after {
+  content: "+";
+  display: grid;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 999px;
+  background: #eef4f6;
+  color: #142027;
+}
+
+.scan-settings[open] summary::after,
+.manual-panel[open] summary::after {
+  content: "-";
+}
+
+.scan-settings summary strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #142027;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scan-settings .compact-grid {
+  padding: 0 12px 12px;
+}
+
+.compact-grid.three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.scan-fallbacks {
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(130px, 0.8fr);
+  align-items: end;
+}
+
+.scan-fallbacks button {
+  min-height: 40px;
+  padding-inline: 12px;
+}
+
+.photo-input input {
+  min-height: 40px;
+  padding-top: 8px;
+  font-size: 0.78rem;
+}
+
+.manual-panel {
+  padding: 0;
+}
+
+.manual-form {
+  display: grid;
+  grid-template-columns: 1.2fr 1.2fr 0.8fr auto;
+  gap: 10px;
+  align-items: end;
+  padding: 0 16px 16px;
+}
+
+.manual-form label {
+  display: grid;
+  gap: 5px;
+  color: #60717a;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.manual-form input,
+.manual-form select {
+  width: 100%;
+}
+
 .scanner-message {
   grid-column: 1 / -1;
   margin: 0;
   border-radius: 8px;
-  padding: 12px;
+  padding: 10px 12px;
   background: #f4f8f9;
   color: #394a53;
 }
@@ -2209,6 +2376,28 @@ tbody tr:hover {
   .primary-action,
   .secondary-action {
     width: 100%;
+  }
+
+  .fast-scan-strip,
+  .compact-grid,
+  .compact-grid.three,
+  .scan-fallbacks,
+  .manual-form {
+    grid-template-columns: 1fr;
+  }
+
+  .camera-slot,
+  .scanner-video {
+    min-height: 180px;
+  }
+
+  .scan-pop-card {
+    grid-template-columns: 1fr;
+  }
+
+  .scan-pop-card em {
+    grid-column: auto;
+    grid-row: auto;
   }
 }
 
