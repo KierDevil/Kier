@@ -5,7 +5,8 @@ import path from 'node:path';
 
 const certPath = path.resolve('certs/vite.crt');
 const keyPath = path.resolve('certs/vite.key');
-const https = fs.existsSync(certPath) && fs.existsSync(keyPath)
+const useHttps = process.env.KIER_FRONTEND_HTTPS === '1';
+const https = useHttps && fs.existsSync(certPath) && fs.existsSync(keyPath)
   ? {
       cert: fs.readFileSync(certPath),
       key: fs.readFileSync(keyPath),

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="Kier.Mobile.MainPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    BackgroundColor="{StaticResource Background}">
+    <Grid RowDefinitions="Auto,*">
+        <Grid
+            Padding="14,12"
+            ColumnDefinitions="*,Auto"
+            ColumnSpacing="10"
+            BackgroundColor="White">
+            <Entry
+                x:Name="ServerUrlEntry"
+                Grid.Column="0"
+                Keyboard="Url"
+                Placeholder="https://your-server:5173"
+                ReturnType="Go"
+                TextColor="{StaticResource TextColor}" />
+            <Button
+                Grid.Column="1"
+                Clicked="OnOpenClicked"
+                Text="Open" />
+        </Grid>
+
+        <WebView
+            x:Name="AppWebView"
+            Grid.Row="1"
+            Navigating="OnWebViewNavigating"
+            Navigated="OnWebViewNavigated" />
+    </Grid>
+</ContentPage>

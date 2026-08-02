@@ -20,6 +20,7 @@ Track 1: Microsoft Enterprise Stack
 ## Project Structure
 - `backend/DepartmentFinancialRecords.API` - ASP.NET Core Web API project
 - `frontend` - Vue.js + Vuetify frontend scaffold
+- `mobile/Kier.Mobile` - .NET MAUI Android/iOS mobile wrapper for the web app
 
 ## Clone on Another PC
 ```powershell
@@ -82,10 +83,10 @@ pnpm run dev -- --host 0.0.0.0 --port 5173
 From the project root, run:
 
 ```powershell
-start.cmd
+.\start.cmd
 ```
 
-This script will open separate terminals for the backend and frontend. The backend runs at `http://localhost:5000`, and the frontend runs at `https://localhost:5173` when local HTTPS certificates are present.
+This script will open separate terminals for the backend and frontend. The backend runs at `http://localhost:5000`, and the frontend runs at `http://localhost:5173` by default.
 
 ## QR and RFID Attendance
 - QR payload format: `KIER:2026-001`
@@ -98,16 +99,47 @@ This script will open separate terminals for the backend and frontend. The backe
 Start the frontend with `--host 0.0.0.0`, then open this on a phone connected to the same Wi-Fi:
 
 ```text
-https://YOUR-PC-IP:5173
+http://YOUR-PC-IP:5173
 ```
 
 Example:
 
 ```text
-https://192.168.10.205:5173
+http://192.168.10.205:5173
 ```
 
-The phone may show a certificate warning for local HTTPS. Continue through the warning for development use.
+If you enable local HTTPS manually, the phone may show a certificate warning for development use.
+
+## Mobile App
+The repository now includes a .NET MAUI Android/iOS app in:
+
+```text
+mobile/Kier.Mobile
+```
+
+It opens the same Kier web app inside a phone app, so it still uses the same backend API and MySQL database.
+
+Before building the Android app on Windows, install the MAUI Android workload:
+
+```powershell
+dotnet workload restore mobile/Kier.Mobile/Kier.Mobile.csproj
+```
+
+Then build it:
+
+```powershell
+dotnet build mobile/Kier.Mobile/Kier.Mobile.csproj -f net8.0-android
+```
+
+When the app opens, enter the running web app URL, for example:
+
+```text
+http://192.168.10.205:5173
+```
+
+Allow camera permission so the QR scanner can work.
+
+iOS support is included, but building/running the iPhone app requires a Mac with Xcode and Apple signing.
 
 ## Free Cloud Hosting Option
 Use this when you do not want your laptop to act as the server.

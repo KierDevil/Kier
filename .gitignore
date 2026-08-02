@@ -13,6 +13,9 @@
 /mysql-*-winx64/
 /mysql-data/
 /mysql-*.zip
+/android-sdk/
+/jdk*/
+/jdk*.zip
 *.pid
 
 # Vite build output
