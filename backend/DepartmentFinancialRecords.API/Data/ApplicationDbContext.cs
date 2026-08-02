@@ -19,5 +19,19 @@ namespace DepartmentFinancialRecords.API.Data
         public DbSet<AttendanceEvent> AttendanceEvents => Set<AttendanceEvent>();
         public DbSet<AttendanceRecord> AttendanceRecords => Set<AttendanceRecord>();
         public DbSet<ActivityLog> ActivityLogs => Set<ActivityLog>();
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            modelBuilder.Entity<Student>()
+                .HasIndex(student => student.StudentId)
+                .IsUnique();
+
+            modelBuilder.Entity<Student>()
+                .HasIndex(student => student.RfidUid);
+
+            modelBuilder.Entity<AttendanceRecord>()
+                .HasIndex(record => new { record.StudentId, record.AttendanceEventId })
+                .IsUnique();
+        }
     }
 }

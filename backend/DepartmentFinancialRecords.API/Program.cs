@@ -77,6 +77,26 @@ using (var scope = app.Services.CreateScope())
         // Existing local databases already have this column after the first RFID startup.
     }
 
+    foreach (var sql in new[]
+    {
+        "ALTER TABLE Students MODIFY StudentId varchar(64) NOT NULL",
+        "ALTER TABLE Students MODIFY RfidUid varchar(128) NOT NULL",
+        "ALTER TABLE AttendanceEvents MODIFY Title varchar(200) NOT NULL",
+        "CREATE UNIQUE INDEX IX_Students_StudentId ON Students (StudentId)",
+        "CREATE INDEX IX_Students_RfidUid ON Students (RfidUid)",
+        "CREATE UNIQUE INDEX IX_AttendanceRecords_StudentId_AttendanceEventId ON AttendanceRecords (StudentId, AttendanceEventId)"
+    })
+    {
+        try
+        {
+            dbContext.Database.ExecuteSqlRaw(sql);
+        }
+        catch
+        {
+            // Existing databases may already have these columns/indexes.
+        }
+    }
+
     if (!dbContext.Students.Any())
     {
         dbContext.Students.AddRange(

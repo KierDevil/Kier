@@ -50,6 +50,28 @@ namespace DepartmentFinancialRecords.API.Controllers
 
             return CreatedAtAction(nameof(Get), new { id = student.Id }, StudentDto.FromStudent(student));
         }
+
+        [HttpPut("{id:int}")]
+        public async Task<ActionResult<StudentDto>> Update(int id, CreateStudentRequest request)
+        {
+            var student = await _dbContext.Students.FirstOrDefaultAsync(item => item.Id == id && item.IsActive);
+            if (student is null)
+            {
+                return NotFound(new { message = "Student was not found." });
+            }
+
+            student.StudentId = request.StudentNo.Trim();
+            student.FirstName = request.FirstName.Trim();
+            student.LastName = request.LastName.Trim();
+            student.Course = request.Course.Trim();
+            student.Section = request.Section.Trim();
+            student.ContactNumber = request.ContactNumber.Trim();
+            student.RfidUid = RfidUtility.Normalize(request.RfidUid);
+
+            await _dbContext.SaveChangesAsync();
+
+            return Ok(StudentDto.FromStudent(student));
+        }
     }
 
     public record CreateStudentRequest(

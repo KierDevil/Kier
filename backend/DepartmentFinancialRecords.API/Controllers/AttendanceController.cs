@@ -117,7 +117,34 @@ namespace DepartmentFinancialRecords.API.Controllers
 
             _dbContext.AttendanceRecords.Add(record);
             await UpsertLateFine(student.Id, title, lateFineAmount, minutesLate);
-            await _dbContext.SaveChangesAsync();
+
+            try
+            {
+                await _dbContext.SaveChangesAsync();
+            }
+            catch (DbUpdateException)
+            {
+                _dbContext.ChangeTracker.Clear();
+                var concurrentRecord = await _dbContext.AttendanceRecords
+                    .Include(item => item.Student)
+                    .Include(item => item.AttendanceEvent)
+                    .FirstOrDefaultAsync(item =>
+                        item.StudentId == student.Id &&
+                        item.AttendanceEventId == attendanceEvent.Id);
+
+                if (concurrentRecord is null)
+                {
+                    throw;
+                }
+
+                concurrentRecord.Status = status;
+                concurrentRecord.RecordedAt = DateTime.UtcNow;
+                concurrentRecord.Remarks = BuildRemarks(request.Remarks, minutesLate, lateFineAmount, "Updated by simultaneous scan.");
+                await UpsertLateFine(student.Id, title, lateFineAmount, minutesLate);
+                await _dbContext.SaveChangesAsync();
+
+                return Ok(AttendanceRecordDto.FromRecord(concurrentRecord, minutesLate, lateFineAmount));
+            }
 
             record.Student = student;
             record.AttendanceEvent = attendanceEvent;

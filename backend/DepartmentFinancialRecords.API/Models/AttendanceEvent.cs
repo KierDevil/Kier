@@ -7,6 +7,7 @@ namespace DepartmentFinancialRecords.API.Models
         public int Id { get; set; }
 
         [Required]
+        [MaxLength(200)]
         public string Title { get; set; } = string.Empty;
 
         public DateTime EventDate { get; set; } = DateTime.UtcNow;

@@ -399,10 +399,26 @@
                   </select>
                 </label>
                 <label>
-                  Manual QR / Student ID
-                  <input v-model="manualQr" type="text" placeholder="KIER:2026-001 or 2026-001" />
+                  Fast Scan: QR / RFID / Student ID
+                  <input
+                    ref="quickScanInput"
+                    v-model="quickScanValue"
+                    type="text"
+                    placeholder="Tap RFID, scan QR text, or type student ID"
+                    @keydown.enter.prevent="recordAnyScan(quickScanValue)"
+                  />
                 </label>
-                <button type="button" class="primary-action" @click="recordQrScan(manualQr)">Record Scan</button>
+                <button type="button" class="primary-action" @click="recordAnyScan(quickScanValue)">Record Fast Scan</button>
+                <label>
+                  Manual QR / Student ID
+                  <input
+                    v-model="manualQr"
+                    type="text"
+                    placeholder="KIER:2026-001 or 2026-001"
+                    @keydown.enter.prevent="recordQrScan(manualQr)"
+                  />
+                </label>
+                <button type="button" class="secondary-action" @click="recordQrScan(manualQr)">Record ID / QR</button>
                 <label>
                   Take QR Photo
                   <input type="file" accept="image/*" capture="environment" @change="recordQrPhoto" />
@@ -419,6 +435,14 @@
                 <button type="button" class="secondary-action" @click="recordRfidScan(manualRfid)">Record RFID</button>
               </div>
               <p class="scanner-message">{{ scannerMessage }}</p>
+              <transition name="scan-pop">
+                <aside v-if="scanPop.visible" class="scan-pop-card" :class="scanPop.status.toLowerCase()">
+                  <span>{{ scanPop.method }}</span>
+                  <strong>{{ scanPop.name }}</strong>
+                  <small>{{ scanPop.studentNo }} - {{ scanPop.status }} - {{ scanPop.event }}</small>
+                  <em>{{ scanPop.time }}</em>
+                </aside>
+              </transition>
             </div>
           </section>
         </section>
@@ -624,14 +648,27 @@ const toastMessage = ref('');
 const health = ref(null);
 const healthError = ref('');
 const scannerVideo = ref(null);
+const quickScanInput = ref(null);
 const scannerActive = ref(false);
 const scannerMessage = ref('Camera scanner is ready. You can also type the QR value manually.');
+const quickScanValue = ref('');
 const manualQr = ref('');
 const manualRfid = ref('');
 const studentQrCodes = ref({});
+const scanPop = reactive({
+  visible: false,
+  name: '',
+  studentNo: '',
+  method: '',
+  status: '',
+  event: '',
+  time: '',
+});
 let scannerStream = null;
 let scannerTimer = null;
+let scanPopTimer = null;
 let lastScan = { value: '', time: 0 };
+const scanCooldownMs = 750;
 
 const students = ref(copy(demoData.students));
 const collections = ref(copy(demoData.collections));
@@ -761,6 +798,9 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   stopQrScanner();
+  if (scanPopTimer) {
+    window.clearTimeout(scanPopTimer);
+  }
 });
 
 function copy(value) {
@@ -906,6 +946,7 @@ async function saveStudent() {
     const index = students.value.findIndex((student) => student.id === editingStudentId.value);
     if (index >= 0) {
       students.value[index] = { ...students.value[index], ...studentForm };
+      await updateBackendStudent(students.value[index]);
       logActivity('Student', `${studentForm.name} updated`, 'Student profile was changed');
       notify('Student updated');
     }
@@ -940,6 +981,28 @@ async function createBackendStudent(student) {
     });
   } catch {
     // The frontend still works offline; QR scans will sync once the backend has the student.
+  }
+}
+
+async function updateBackendStudent(student) {
+  const [firstName, ...lastNameParts] = student.name.trim().split(/\s+/);
+
+  try {
+    await fetch(apiUrl(`/api/students/${student.id}`), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        studentNo: student.studentNo,
+        firstName: firstName || student.name,
+        lastName: lastNameParts.join(' ') || '',
+        course: student.course,
+        section: student.section,
+        contactNumber: student.contact || '',
+        rfidUid: normalizeRfid(student.rfidUid),
+      }),
+    });
+  } catch {
+    // Local edits stay available even when the backend is offline.
   }
 }
 
@@ -1035,6 +1098,20 @@ async function addAttendance() {
 }
 
 function addAttendanceLocal(event, studentId, status) {
+  const existingIndex = attendanceRecords.value.findIndex(
+    (record) => record.event === event && record.studentId === studentId,
+  );
+
+  if (existingIndex >= 0) {
+    const existing = attendanceRecords.value.splice(existingIndex, 1)[0];
+    attendanceRecords.value.unshift({
+      ...existing,
+      status,
+    });
+    logActivity('Attendance', `${event} updated`, `${studentName(studentId)} - ${status}`);
+    return;
+  }
+
   attendanceRecords.value.unshift({
     id: nextId(attendanceRecords.value),
     event,
@@ -1083,7 +1160,7 @@ async function startQrScanner() {
       if (decoded?.data) {
         await recordQrScan(decoded.data);
       }
-    }, 500);
+    }, 250);
   } catch (error) {
     scannerMessage.value = error instanceof Error ? error.message : 'Unable to open camera.';
   }
@@ -1110,7 +1187,12 @@ async function recordQrScan(rawValue, options = {}) {
   const studentNo = parseQrPayload(rawValue);
   const now = Date.now();
 
-  if (studentNo === lastScan.value && now - lastScan.time < 3500) {
+  if (!studentNo) {
+    scannerMessage.value = 'Scan or type a student ID first.';
+    return;
+  }
+
+  if (studentNo === lastScan.value && now - lastScan.time < scanCooldownMs) {
     return;
   }
 
@@ -1145,6 +1227,7 @@ async function recordQrScan(rawValue, options = {}) {
     const result = await response.json();
     showLateFineResult(result);
     addAttendanceLocal(result.event, student.id, result.status);
+    showScanPop(student, result.status, result.event, 'QR / Student ID');
   } catch (error) {
     scannerMessage.value = error instanceof Error ? error.message : 'Saved locally. Backend scan save failed.';
     notify('Backend scan blocked or failed');
@@ -1152,6 +1235,7 @@ async function recordQrScan(rawValue, options = {}) {
   }
 
   manualQr.value = '';
+  clearQuickScan();
   if (!scannerMessage.value.includes('Fine added')) {
     scannerMessage.value = `${student.name} recorded for ${scanForm.eventTitle}.`;
   }
@@ -1197,7 +1281,12 @@ async function recordRfidScan(rawValue) {
   const rfidUid = normalizeRfid(rawValue);
   const now = Date.now();
 
-  if (rfidUid === lastScan.value && now - lastScan.time < 3500) {
+  if (!rfidUid) {
+    scannerMessage.value = 'Tap or type an RFID UID first.';
+    return;
+  }
+
+  if (rfidUid === lastScan.value && now - lastScan.time < scanCooldownMs) {
     return;
   }
 
@@ -1232,6 +1321,7 @@ async function recordRfidScan(rawValue) {
     const result = await response.json();
     showLateFineResult(result);
     addAttendanceLocal(result.event, student.id, result.status);
+    showScanPop(student, result.status, result.event, 'RFID');
   } catch (error) {
     scannerMessage.value = error instanceof Error ? error.message : 'Saved locally. Backend RFID save failed.';
     notify('Backend RFID blocked or failed');
@@ -1239,16 +1329,71 @@ async function recordRfidScan(rawValue) {
   }
 
   manualRfid.value = '';
+  clearQuickScan();
   if (!scannerMessage.value.includes('Fine added')) {
     scannerMessage.value = `${student.name} recorded by RFID for ${scanForm.eventTitle}.`;
   }
   notify(`${student.name} RFID attendance recorded`);
 }
 
+async function recordAnyScan(rawValue) {
+  const value = String(rawValue || '').trim();
+  if (!value) {
+    scannerMessage.value = 'Scan an RFID, QR, or student ID first.';
+    focusQuickScan();
+    return;
+  }
+
+  const studentNo = parseQrPayload(value);
+  const normalizedValue = normalizeRfid(value);
+  const studentByNumber = students.value.find((student) => student.studentNo === studentNo);
+  const studentByRfid = students.value.find((student) => normalizeRfid(student.rfidUid) === normalizedValue);
+
+  if (value.toUpperCase().startsWith('KIER:') || studentByNumber) {
+    await recordQrScan(studentNo);
+  } else if (studentByRfid) {
+    await recordRfidScan(value);
+  } else {
+    scannerMessage.value = `${value} is not mapped to a student ID or RFID.`;
+    notify('Scan not mapped');
+  }
+
+  focusQuickScan();
+}
+
+function clearQuickScan() {
+  quickScanValue.value = '';
+  focusQuickScan();
+}
+
+function focusQuickScan() {
+  window.setTimeout(() => quickScanInput.value?.focus(), 0);
+}
+
 function showLateFineResult(result) {
   if (Number(result?.lateFineAmount) > 0) {
     scannerMessage.value = `Late by ${result.minutesLate} minute(s). Fine added: ${money(result.lateFineAmount)}.`;
   }
+}
+
+function showScanPop(student, status, event, method) {
+  if (scanPopTimer) {
+    window.clearTimeout(scanPopTimer);
+  }
+
+  Object.assign(scanPop, {
+    visible: true,
+    name: student.name,
+    studentNo: student.studentNo,
+    method,
+    status,
+    event,
+    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+  });
+
+  scanPopTimer = window.setTimeout(() => {
+    scanPop.visible = false;
+  }, 3000);
 }
 
 async function responseMessage(response) {
@@ -1863,6 +2008,74 @@ tbody tr:hover {
   padding: 12px;
   background: #f4f8f9;
   color: #394a53;
+}
+
+.scan-pop-card {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 14px;
+  align-items: center;
+  border: 1px solid #b7dfd3;
+  border-left: 6px solid #0f766e;
+  border-radius: 8px;
+  padding: 16px 18px;
+  background: #ecfdf5;
+  box-shadow: 0 14px 30px rgba(15, 118, 110, 0.16);
+}
+
+.scan-pop-card.late {
+  border-color: #fed7aa;
+  border-left-color: #f59e0b;
+  background: #fffbeb;
+  box-shadow: 0 14px 30px rgba(245, 158, 11, 0.16);
+}
+
+.scan-pop-card.excused {
+  border-color: #d8e0e5;
+  border-left-color: #64748b;
+  background: #f8fafc;
+  box-shadow: 0 14px 30px rgba(51, 65, 85, 0.12);
+}
+
+.scan-pop-card span {
+  color: #60717a;
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.scan-pop-card strong {
+  min-width: 0;
+  color: #142027;
+  font-size: 1.25rem;
+  line-height: 1.1;
+}
+
+.scan-pop-card small {
+  min-width: 0;
+  color: #394a53;
+  font-weight: 800;
+}
+
+.scan-pop-card em {
+  grid-column: 2;
+  grid-row: 1 / span 3;
+  color: #60717a;
+  font-size: 0.86rem;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.scan-pop-enter-active,
+.scan-pop-leave-active {
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.scan-pop-enter-from,
+.scan-pop-leave-to {
+  opacity: 0;
+  transform: translateY(8px);
 }
 
 .badge {
