@@ -365,13 +365,33 @@
             <div class="scanner-body">
               <video ref="scannerVideo" class="scanner-video" autoplay muted playsinline></video>
               <div class="scanner-controls">
-                <label>
-                  Event
-                  <input v-model="scanForm.eventTitle" type="text" />
-                </label>
-                <label>
-                  Status
-                  <select v-model="scanForm.status">
+              <label>
+                Event
+                <input v-model="scanForm.eventTitle" type="text" />
+              </label>
+              <label>
+                Opens
+                <input v-model="scanForm.openAt" type="datetime-local" />
+              </label>
+              <label>
+                Late Starts
+                <input v-model="scanForm.lateAt" type="datetime-local" />
+              </label>
+              <label>
+                Closes
+                <input v-model="scanForm.closeAt" type="datetime-local" />
+              </label>
+              <label>
+                Fine Per Late Minute
+                <input v-model.number="scanForm.finePerLateMinute" type="number" min="0" step="1" />
+              </label>
+              <label>
+                Max Late Fine
+                <input v-model.number="scanForm.maxLateFine" type="number" min="0" step="1" />
+              </label>
+              <label>
+                Status
+                <select v-model="scanForm.status">
                     <option>Present</option>
                     <option>Late</option>
                     <option>Absent</option>
@@ -383,6 +403,10 @@
                   <input v-model="manualQr" type="text" placeholder="KIER:2026-001 or 2026-001" />
                 </label>
                 <button type="button" class="primary-action" @click="recordQrScan(manualQr)">Record Scan</button>
+                <label>
+                  Take QR Photo
+                  <input type="file" accept="image/*" capture="environment" @change="recordQrPhoto" />
+                </label>
                 <label>
                   RFID Reader
                   <input
@@ -450,7 +474,7 @@
           <article class="stat-card">
             <span>Attendance Rate</span>
             <strong>{{ attendanceRate }}%</strong>
-            <small>Present or late records</small>
+            <small>Present or late, excluding excused</small>
           </article>
         </div>
 
@@ -549,6 +573,7 @@
 </template>
 
 <script setup>
+import jsQR from 'jsqr';
 import QRCode from 'qrcode';
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 
@@ -636,7 +661,15 @@ const studentForm = reactive(blankStudent());
 const collectionForm = reactive({ studentId: 1, category: 'Department Fee', amount: 100, receipt: 'OR-1005' });
 const fineForm = reactive({ studentId: 1, category: 'Late attendance', amount: 50, status: 'Unpaid' });
 const attendanceForm = reactive({ event: 'General Assembly', studentId: 1, status: 'Present' });
-const scanForm = reactive({ eventTitle: 'General Assembly', status: 'Present' });
+const scanForm = reactive({
+  eventTitle: 'General Assembly',
+  status: 'Present',
+  openAt: dateTimeLocalOffset(0),
+  lateAt: dateTimeLocalOffset(30),
+  closeAt: dateTimeLocalOffset(60),
+  finePerLateMinute: 1,
+  maxLateFine: 50,
+});
 const disbursementForm = reactive({ description: 'Department expense', amount: 100 });
 
 const activeSection = computed(() => sections[activeView.value]);
@@ -657,18 +690,19 @@ const unpaidFines = computed(() =>
   fines.value.filter((fine) => fine.status !== 'Paid').reduce((sum, item) => sum + Number(item.amount), 0),
 );
 const attendanceRate = computed(() => {
-  if (!attendanceRecords.value.length) {
+  const countedRecords = attendanceRecords.value.filter((record) => record.status !== 'Excused');
+  if (!countedRecords.length) {
     return 0;
   }
 
-  const counted = attendanceRecords.value.filter((record) => ['Present', 'Late'].includes(record.status)).length;
-  return Math.round((counted / attendanceRecords.value.length) * 100);
+  const counted = countedRecords.filter((record) => ['Present', 'Late'].includes(record.status)).length;
+  return Math.round((counted / countedRecords.length) * 100);
 });
 const stats = computed(() => [
   { label: 'Available Funds', value: money(availableFunds.value), detail: 'Collections minus expenses' },
   { label: 'Collected', value: money(totalCollections.value), detail: `${collections.value.length} receipts` },
   { label: 'Unpaid Fines', value: money(unpaidFines.value), detail: `${fines.value.filter((fine) => fine.status !== 'Paid').length} open fines` },
-  { label: 'Attendance', value: `${attendanceRate.value}%`, detail: 'Present or late records' },
+  { label: 'Attendance', value: `${attendanceRate.value}%`, detail: 'Excused records are neutral' },
 ]);
 const priorityStudents = computed(() =>
   students.value
@@ -805,7 +839,7 @@ function balanceFor(studentId) {
 }
 
 function attendanceFor(studentId) {
-  const records = attendanceRecords.value.filter((record) => record.studentId === studentId);
+  const records = attendanceRecords.value.filter((record) => record.studentId === studentId && record.status !== 'Excused');
   if (!records.length) {
     return 0;
   }
@@ -832,6 +866,22 @@ function nextReceipt() {
 
 function currentMonth() {
   return new Date().toLocaleString('en-US', { month: 'short' });
+}
+
+function dateTimeLocalOffset(minutes) {
+  const date = new Date(Date.now() + minutes * 60 * 1000);
+  date.setSeconds(0, 0);
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60 * 1000).toISOString().slice(0, 16);
+}
+
+function attendanceWindowPayload() {
+  return {
+    openAt: scanForm.openAt || null,
+    lateAt: scanForm.lateAt || null,
+    closeAt: scanForm.closeAt || null,
+    finePerLateMinute: Number(scanForm.finePerLateMinute || 0),
+    maxLateFine: Number(scanForm.maxLateFine || 0),
+  };
 }
 
 function notify(message) {
@@ -991,8 +1041,8 @@ function addAttendanceLocal(event, studentId, status) {
 }
 
 async function startQrScanner() {
-  if (!('BarcodeDetector' in window)) {
-    scannerMessage.value = 'This browser does not support camera QR scanning. Type the QR value manually below.';
+  if (!navigator.mediaDevices?.getUserMedia) {
+    scannerMessage.value = 'This browser cannot open the camera here. Use Take QR Photo or manual input.';
     return;
   }
 
@@ -1002,20 +1052,33 @@ async function startQrScanner() {
       audio: false,
     });
     scannerVideo.value.srcObject = scannerStream;
+    await scannerVideo.value.play();
     scannerActive.value = true;
     scannerMessage.value = 'Camera is scanning. Point it at a student ID QR code.';
 
-    const detector = new window.BarcodeDetector({ formats: ['qr_code'] });
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+
     scannerTimer = window.setInterval(async () => {
       if (!scannerVideo.value || scannerVideo.value.readyState < 2) {
         return;
       }
 
-      const codes = await detector.detect(scannerVideo.value);
-      if (codes.length > 0) {
-        await recordQrScan(codes[0].rawValue);
+      canvas.width = scannerVideo.value.videoWidth;
+      canvas.height = scannerVideo.value.videoHeight;
+
+      if (!canvas.width || !canvas.height) {
+        return;
       }
-    }, 900);
+
+      context.drawImage(scannerVideo.value, 0, 0, canvas.width, canvas.height);
+      const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+      const decoded = jsQR(imageData.data, imageData.width, imageData.height);
+
+      if (decoded?.data) {
+        await recordQrScan(decoded.data);
+      }
+    }, 500);
   } catch (error) {
     scannerMessage.value = error instanceof Error ? error.message : 'Unable to open camera.';
   }
@@ -1064,26 +1127,64 @@ async function recordQrScan(rawValue, options = {}) {
         rfidUid: null,
         eventTitle: scanForm.eventTitle || attendanceForm.event,
         status: scanForm.status || attendanceForm.status,
+        ...attendanceWindowPayload(),
         location: 'QR scanner',
         remarks: 'Recorded from student ID QR.',
       }),
     });
 
     if (!response.ok) {
-      throw new Error(await response.text());
+      throw new Error(await responseMessage(response));
     }
 
-    await response.json();
+    const result = await response.json();
+    showLateFineResult(result);
+    addAttendanceLocal(result.event, student.id, result.status);
   } catch (error) {
-    scannerMessage.value = 'Saved locally. Backend scan save failed.';
+    scannerMessage.value = error instanceof Error ? error.message : 'Saved locally. Backend scan save failed.';
+    notify('Backend scan blocked or failed');
+    return;
   }
 
-  addAttendanceLocal(scanForm.eventTitle || attendanceForm.event, student.id, scanForm.status || attendanceForm.status);
   manualQr.value = '';
+  if (!scannerMessage.value.includes('Fine added')) {
     scannerMessage.value = `${student.name} recorded for ${scanForm.eventTitle}.`;
+  }
 
   if (!options.silent) {
     notify(`${student.name} attendance recorded`);
+  }
+}
+
+async function recordQrPhoto(event) {
+  const file = event.target.files?.[0];
+  event.target.value = '';
+
+  if (!file) {
+    return;
+  }
+
+  try {
+    const bitmap = await createImageBitmap(file);
+    const canvas = document.createElement('canvas');
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    context.drawImage(bitmap, 0, 0);
+
+    const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+    const decoded = jsQR(imageData.data, imageData.width, imageData.height);
+
+    if (!decoded?.data) {
+      scannerMessage.value = 'No QR code found in that photo. Try a clearer, closer shot.';
+      notify('No QR found');
+      return;
+    }
+
+    await recordQrScan(decoded.data);
+  } catch (error) {
+    scannerMessage.value = error instanceof Error ? error.message : 'Unable to read that QR photo.';
   }
 }
 
@@ -1113,24 +1214,46 @@ async function recordRfidScan(rawValue) {
         rfidUid,
         eventTitle: scanForm.eventTitle || attendanceForm.event,
         status: scanForm.status || attendanceForm.status,
+        ...attendanceWindowPayload(),
         location: 'RFID reader',
         remarks: 'Recorded from RFID card.',
       }),
     });
 
     if (!response.ok) {
-      throw new Error(await response.text());
+      throw new Error(await responseMessage(response));
     }
 
-    await response.json();
-  } catch {
-    scannerMessage.value = 'Saved locally. Backend RFID save failed.';
+    const result = await response.json();
+    showLateFineResult(result);
+    addAttendanceLocal(result.event, student.id, result.status);
+  } catch (error) {
+    scannerMessage.value = error instanceof Error ? error.message : 'Saved locally. Backend RFID save failed.';
+    notify('Backend RFID blocked or failed');
+    return;
   }
 
-  addAttendanceLocal(scanForm.eventTitle || attendanceForm.event, student.id, scanForm.status || attendanceForm.status);
   manualRfid.value = '';
-  scannerMessage.value = `${student.name} recorded by RFID for ${scanForm.eventTitle}.`;
+  if (!scannerMessage.value.includes('Fine added')) {
+    scannerMessage.value = `${student.name} recorded by RFID for ${scanForm.eventTitle}.`;
+  }
   notify(`${student.name} RFID attendance recorded`);
+}
+
+function showLateFineResult(result) {
+  if (Number(result?.lateFineAmount) > 0) {
+    scannerMessage.value = `Late by ${result.minutesLate} minute(s). Fine added: ${money(result.lateFineAmount)}.`;
+  }
+}
+
+async function responseMessage(response) {
+  const text = await response.text();
+
+  try {
+    return JSON.parse(text).message || text;
+  } catch {
+    return text || `Request failed with ${response.status}`;
+  }
 }
 
 function removeAttendance(recordId) {

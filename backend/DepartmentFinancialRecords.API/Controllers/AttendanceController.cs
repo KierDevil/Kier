@@ -25,10 +25,9 @@ namespace DepartmentFinancialRecords.API.Controllers
                 .Include(record => record.AttendanceEvent)
                 .OrderByDescending(record => record.RecordedAt)
                 .Take(250)
-                .Select(record => AttendanceRecordDto.FromRecord(record))
                 .ToListAsync();
 
-            return Ok(records);
+            return Ok(records.Select(record => AttendanceRecordDto.FromRecord(record)));
         }
 
         [HttpPost("scan")]
@@ -45,6 +44,17 @@ namespace DepartmentFinancialRecords.API.Controllers
                 return NotFound(new { message = $"No student was found for ID/RFID {studentNo}{rfidUid}." });
             }
 
+            var now = DateTime.Now;
+            if (request.OpenAt.HasValue && now < request.OpenAt.Value)
+            {
+                return BadRequest(new { message = $"Attendance opens at {request.OpenAt.Value:g}." });
+            }
+
+            if (request.CloseAt.HasValue && now > request.CloseAt.Value)
+            {
+                return BadRequest(new { message = $"Attendance closed at {request.CloseAt.Value:g}." });
+            }
+
             var title = string.IsNullOrWhiteSpace(request.EventTitle) ? "Attendance Scan" : request.EventTitle.Trim();
             var attendanceEvent = await _dbContext.AttendanceEvents
                 .FirstOrDefaultAsync(item => item.Title == title && item.EventDate.Date == DateTime.UtcNow.Date);
@@ -54,7 +64,7 @@ namespace DepartmentFinancialRecords.API.Controllers
                 attendanceEvent = new AttendanceEvent
                 {
                     Title = title,
-                    EventDate = DateTime.UtcNow,
+                    EventDate = request.OpenAt?.ToUniversalTime() ?? DateTime.UtcNow,
                     Location = request.Location?.Trim() ?? string.Empty,
                     Description = "Created from QR/RFID attendance scan."
                 };
@@ -65,6 +75,18 @@ namespace DepartmentFinancialRecords.API.Controllers
             var status = Enum.TryParse<AttendanceStatus>(request.Status, true, out var parsedStatus)
                 ? parsedStatus
                 : AttendanceStatus.Present;
+            var minutesLate = 0;
+            if (status == AttendanceStatus.Present && request.LateAt.HasValue && now >= request.LateAt.Value)
+            {
+                status = AttendanceStatus.Late;
+                minutesLate = Math.Max(1, (int)Math.Ceiling((now - request.LateAt.Value).TotalMinutes));
+            }
+            else if (status == AttendanceStatus.Late && request.LateAt.HasValue)
+            {
+                minutesLate = Math.Max(1, (int)Math.Ceiling((now - request.LateAt.Value).TotalMinutes));
+            }
+
+            var lateFineAmount = CalculateLateFine(status, minutesLate, request.FinePerLateMinute, request.MaxLateFine);
 
             var existingRecord = await _dbContext.AttendanceRecords
                 .Include(record => record.Student)
@@ -77,10 +99,11 @@ namespace DepartmentFinancialRecords.API.Controllers
             {
                 existingRecord.Status = status;
                 existingRecord.RecordedAt = DateTime.UtcNow;
-                existingRecord.Remarks = request.Remarks?.Trim() ?? "Updated by QR/RFID scan.";
+                existingRecord.Remarks = BuildRemarks(request.Remarks, minutesLate, lateFineAmount, "Updated by QR/RFID scan.");
+                await UpsertLateFine(student.Id, title, lateFineAmount, minutesLate);
                 await _dbContext.SaveChangesAsync();
 
-                return Ok(AttendanceRecordDto.FromRecord(existingRecord));
+                return Ok(AttendanceRecordDto.FromRecord(existingRecord, minutesLate, lateFineAmount));
             }
 
             var record = new AttendanceRecord
@@ -89,16 +112,73 @@ namespace DepartmentFinancialRecords.API.Controllers
                 AttendanceEventId = attendanceEvent.Id,
                 Status = status,
                 RecordedAt = DateTime.UtcNow,
-                Remarks = request.Remarks?.Trim() ?? "Recorded by QR/RFID scan."
+                Remarks = BuildRemarks(request.Remarks, minutesLate, lateFineAmount, "Recorded by QR/RFID scan.")
             };
 
             _dbContext.AttendanceRecords.Add(record);
+            await UpsertLateFine(student.Id, title, lateFineAmount, minutesLate);
             await _dbContext.SaveChangesAsync();
 
             record.Student = student;
             record.AttendanceEvent = attendanceEvent;
 
-            return Ok(AttendanceRecordDto.FromRecord(record));
+            return Ok(AttendanceRecordDto.FromRecord(record, minutesLate, lateFineAmount));
+        }
+
+        private async Task UpsertLateFine(int studentId, string eventTitle, decimal amount, int minutesLate)
+        {
+            var category = $"Late Attendance - {eventTitle}";
+            var existingFine = await _dbContext.Fines.FirstOrDefaultAsync(fine =>
+                fine.StudentId == studentId &&
+                fine.Category == category &&
+                !fine.IsPaid);
+
+            if (amount <= 0)
+            {
+                return;
+            }
+
+            if (existingFine is null)
+            {
+                _dbContext.Fines.Add(new Fine
+                {
+                    StudentId = studentId,
+                    Category = category,
+                    Amount = amount,
+                    Remarks = $"{minutesLate} minute(s) late.",
+                    DateIssued = DateTime.UtcNow,
+                    IsPaid = false
+                });
+                return;
+            }
+
+            existingFine.Amount = amount;
+            existingFine.Remarks = $"{minutesLate} minute(s) late.";
+            existingFine.DateIssued = DateTime.UtcNow;
+        }
+
+        private static decimal CalculateLateFine(AttendanceStatus status, int minutesLate, decimal? finePerLateMinute, decimal? maxLateFine)
+        {
+            if (status != AttendanceStatus.Late || minutesLate <= 0 || !finePerLateMinute.HasValue)
+            {
+                return 0;
+            }
+
+            var amount = minutesLate * finePerLateMinute.Value;
+            return maxLateFine.HasValue && maxLateFine.Value > 0
+                ? Math.Min(amount, maxLateFine.Value)
+                : amount;
+        }
+
+        private static string BuildRemarks(string? remarks, int minutesLate, decimal lateFineAmount, string fallback)
+        {
+            var baseRemarks = string.IsNullOrWhiteSpace(remarks) ? fallback : remarks.Trim();
+            if (lateFineAmount <= 0)
+            {
+                return baseRemarks;
+            }
+
+            return $"{baseRemarks} Late by {minutesLate} minute(s). Fine: {lateFineAmount:0.##}.";
         }
     }
 
@@ -107,6 +187,11 @@ namespace DepartmentFinancialRecords.API.Controllers
         string? RfidUid,
         string EventTitle,
         string Status,
+        DateTime? OpenAt,
+        DateTime? LateAt,
+        DateTime? CloseAt,
+        decimal? FinePerLateMinute,
+        decimal? MaxLateFine,
         string? Location,
         string? Remarks);
 
@@ -117,9 +202,11 @@ namespace DepartmentFinancialRecords.API.Controllers
         string StudentNo,
         string StudentName,
         string Status,
-        DateTime RecordedAt)
+        DateTime RecordedAt,
+        int MinutesLate,
+        decimal LateFineAmount)
     {
-        public static AttendanceRecordDto FromRecord(AttendanceRecord record)
+        public static AttendanceRecordDto FromRecord(AttendanceRecord record, int minutesLate = 0, decimal lateFineAmount = 0)
         {
             var studentName = record.Student is null
                 ? "Unknown student"
@@ -132,7 +219,9 @@ namespace DepartmentFinancialRecords.API.Controllers
                 record.Student?.StudentId ?? string.Empty,
                 studentName,
                 record.Status.ToString(),
-                record.RecordedAt);
+                record.RecordedAt,
+                minutesLate,
+                lateFineAmount);
         }
     }
 }
