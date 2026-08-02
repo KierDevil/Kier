@@ -578,6 +578,7 @@ import QRCode from 'qrcode';
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 
 const storageKey = 'kier-records-v2';
+const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 
 const demoData = {
   students: [
@@ -747,7 +748,7 @@ onMounted(async () => {
   await generateStudentQrCodes();
 
   try {
-    const response = await fetch('/api/health');
+    const response = await fetch(apiUrl('/api/health'));
     if (!response.ok) {
       throw new Error(`Health check failed with ${response.status}`);
     }
@@ -764,6 +765,10 @@ onBeforeUnmount(() => {
 
 function copy(value) {
   return JSON.parse(JSON.stringify(value));
+}
+
+function apiUrl(path) {
+  return `${apiBaseUrl}${path}`;
 }
 
 function blankStudent() {
@@ -920,7 +925,7 @@ async function createBackendStudent(student) {
   const [firstName, ...lastNameParts] = student.name.trim().split(/\s+/);
 
   try {
-    await fetch('/api/students', {
+    await fetch(apiUrl('/api/students'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1119,7 +1124,7 @@ async function recordQrScan(rawValue, options = {}) {
   }
 
   try {
-    const response = await fetch('/api/attendance/scan', {
+    const response = await fetch(apiUrl('/api/attendance/scan'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1206,7 +1211,7 @@ async function recordRfidScan(rawValue) {
   }
 
   try {
-    const response = await fetch('/api/attendance/scan', {
+    const response = await fetch(apiUrl('/api/attendance/scan'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

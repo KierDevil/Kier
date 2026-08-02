@@ -109,6 +109,51 @@ https://192.168.10.205:5173
 
 The phone may show a certificate warning for local HTTPS. Continue through the warning for development use.
 
+## Free Cloud Hosting Option
+Use this when you do not want your laptop to act as the server.
+
+### 1. Aiven MySQL Free
+Create a free MySQL service on Aiven, then copy the host, port, user, password, and database name.
+
+Your backend connection string should look like:
+
+```text
+server=AIVEN_HOST;port=AIVEN_PORT;database=defaultdb;user=AIVEN_USER;password=AIVEN_PASSWORD;SslMode=Required;AllowPublicKeyRetrieval=True;
+```
+
+### 2. Koyeb Backend API
+Create a Koyeb web service from this GitHub repo.
+
+Use:
+- Root / Dockerfile path: `backend/DepartmentFinancialRecords.API`
+- Port: `8080`
+
+Set these environment variables in Koyeb:
+
+```text
+ConnectionStrings__DefaultConnection=server=AIVEN_HOST;port=AIVEN_PORT;database=defaultdb;user=AIVEN_USER;password=AIVEN_PASSWORD;SslMode=Required;AllowPublicKeyRetrieval=True;
+AllowedCorsOrigins=https://YOUR_FRONTEND_DOMAIN
+Jwt__Key=replace-with-a-long-random-secret
+ASPNETCORE_ENVIRONMENT=Production
+```
+
+After deploy, test:
+
+```text
+https://YOUR_KOYEB_APP/api/health
+```
+
+### 3. Frontend Hosting
+Deploy the `frontend` folder to a static host such as Vercel, Netlify, or Render Static Site.
+
+Set this frontend environment variable:
+
+```text
+VITE_API_BASE_URL=https://YOUR_KOYEB_APP
+```
+
+Then rebuild/redeploy the frontend.
+
 ## Notes
 - The backend project uses JWT-based authentication and Swagger for API documentation.
 - The frontend now includes a starter dashboard and checks `/api/health` through the Vite proxy.
