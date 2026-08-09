@@ -18,8 +18,10 @@ namespace DepartmentFinancialRecords.API.Models
 
         public string Course { get; set; } = string.Empty;
         public string YearLevel { get; set; } = string.Empty;
-        public string Section { get; set; } = string.Empty;
         public string ContactNumber { get; set; } = string.Empty;
+        [EmailAddress]
+        [MaxLength(256)]
+        public string Email { get; set; } = string.Empty;
         [MaxLength(128)]
         public string RfidUid { get; set; } = string.Empty;
         public bool IsActive { get; set; } = true;

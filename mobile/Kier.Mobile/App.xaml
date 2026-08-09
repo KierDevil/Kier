@@ -2,12 +2,14 @@
 <Application
     x:Class="Kier.Mobile.App"
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
-    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml">
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:converters="clr-namespace:Kier.Mobile.Converters">
     <Application.Resources>
         <ResourceDictionary>
             <Color x:Key="Primary">#2563eb</Color>
             <Color x:Key="Background">#f8fafc</Color>
             <Color x:Key="TextColor">#0f172a</Color>
+            <converters:StringNotNullOrEmptyConverter x:Key="StringNotNullOrEmptyConverter" />
         </ResourceDictionary>
     </Application.Resources>
 </Application>

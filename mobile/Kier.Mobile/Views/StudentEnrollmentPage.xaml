@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="Kier.Mobile.Views.StudentEnrollmentPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    BackgroundColor="White">
+
+    <ScrollView>
+        <VerticalStackLayout Padding="24" Spacing="18">
+            <Label Text="Enroll Student" FontSize="28" TextColor="#2563eb" HorizontalOptions="Center" />
+            <Label Text="Student Number" />
+            <Entry x:Name="StudentNoEntry" Placeholder="2026-001" />
+            <Label Text="First Name" />
+            <Entry x:Name="FirstNameEntry" Placeholder="John" />
+            <Label Text="Last Name" />
+            <Entry x:Name="LastNameEntry" Placeholder="Doe" />
+            <Label Text="Course" />
+            <Entry x:Name="CourseEntry" Placeholder="BSIT" />
+            <Label Text="Year Level" />
+            <Entry x:Name="YearLevelEntry" Placeholder="1st Year" />
+            <Label Text="Contact Number" />
+            <Entry x:Name="ContactEntry" Placeholder="0917xxxxxxx" Keyboard="Telephone" />
+            <Label Text="Email" />
+            <Entry x:Name="EmailEntry" Placeholder="student@example.com" Keyboard="Email" />
+            <Label Text="RFID UID (optional)" />
+            <Entry x:Name="RfidEntry" Placeholder="RFID2026001" />
+            <Button Text="Create Student" Clicked="OnCreateStudentClicked" />
+            <Label x:Name="StatusLabel" TextColor="#0f172a" />
+            <Label Text="Active Students" FontAttributes="Bold" />
+            <CollectionView x:Name="StudentsCollection" HeightRequest="240">
+                <CollectionView.ItemTemplate>
+                    <DataTemplate>
+                        <Frame Padding="10" Margin="0,0,0,10" BorderColor="#e2e8f0" BackgroundColor="#f8fafc">
+                            <VerticalStackLayout Spacing="4">
+                                <Label Text="{Binding Name}" FontAttributes="Bold" />
+                                <Label Text="{Binding StudentNo}" />
+                                <Label Text="{Binding Course}" />
+                                <Label Text="{Binding Email}" FontSize="12" TextColor="#475569" />
+                            </VerticalStackLayout>
+                        </Frame>
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+            </CollectionView>
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

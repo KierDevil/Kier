@@ -3,9 +3,14 @@
     x:Class="Kier.Mobile.AppShell"
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
-    xmlns:local="clr-namespace:Kier.Mobile"
+    xmlns:views="clr-namespace:Kier.Mobile.Views"
     Shell.FlyoutBehavior="Disabled">
-    <ShellContent
-        Title="Kier Attendance"
-        ContentTemplate="{DataTemplate local:MainPage}" />
+    <ShellContent Route="login" Title="Login" ContentTemplate="{DataTemplate views:LoginPage}" />
+
+    <TabBar>
+        <ShellContent Route="attendance" Title="Attendance" ContentTemplate="{DataTemplate views:AttendancePage}" />
+        <ShellContent Route="students" Title="Students" ContentTemplate="{DataTemplate views:StudentEnrollmentPage}" />
+        <ShellContent Route="payments" Title="Payments" ContentTemplate="{DataTemplate views:PaymentPage}" />
+        <ShellContent Route="settings" Title="Settings" ContentTemplate="{DataTemplate views:SettingsPage}" />
+    </TabBar>
 </Shell>

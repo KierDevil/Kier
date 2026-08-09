@@ -3,6 +3,8 @@ using Android.Webkit;
 using Microsoft.Maui.Handlers;
 #endif
 
+using ZXing.Net.Maui;
+
 namespace Kier.Mobile;
 
 public static class MauiProgram
@@ -11,7 +13,8 @@ public static class MauiProgram
     {
         var builder = MauiApp.CreateBuilder();
 
-        builder.UseMauiApp<App>();
+        builder.UseMauiApp<App>()
+               .UseBarcodeReader();
 
 #if ANDROID
         WebViewHandler.Mapper.AppendToMapping("KierWebViewPermissions", (handler, view) =>

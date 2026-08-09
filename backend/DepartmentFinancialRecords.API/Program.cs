@@ -1,15 +1,32 @@
 using DepartmentFinancialRecords.API.Data;
 using DepartmentFinancialRecords.API.Models;
+using DepartmentFinancialRecords.API.Utilities;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-var jwtKey = builder.Configuration["Jwt:Key"];
-var allowedCorsOrigins = (builder.Configuration["AllowedCorsOrigins"] ?? "http://localhost:5173,https://localhost:5173")
-    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? Environment.GetEnvironmentVariable("DB_CONNECTION_STRING")
+    ?? "server=127.0.0.1;port=3307;database=DepartmentFinancialRecords;user=appuser;password=change-me;SslMode=None;AllowPublicKeyRetrieval=True;";
+var jwtKey = builder.Configuration["Jwt:Key"]
+    ?? Environment.GetEnvironmentVariable("JWT_KEY")
+    ?? "KierDepartmentRecordsJwtSecretKey2026!";
+
+if (string.IsNullOrWhiteSpace(jwtKey))
+{
+    jwtKey = "KierDepartmentRecordsJwtSecretKey2026!";
+}
+
+if (jwtKey.Length < 32)
+{
+    jwtKey = jwtKey.PadRight(32, '!');
+}
+
+var allowedCorsOrigins = (builder.Configuration["AllowedCorsOrigins"] ?? Environment.GetEnvironmentVariable("ALLOWED_CORS_ORIGINS") ?? "*")
+    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+    .ToArray();
 
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
@@ -17,13 +34,25 @@ builder.Logging.AddConsole();
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddAuthorization();
 
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("Frontend", policy =>
-        policy.WithOrigins(allowedCorsOrigins)
-            .AllowAnyHeader()
-            .AllowAnyMethod());
+    {
+        if (allowedCorsOrigins.Any(origin => origin.Trim('"') == "*"))
+        {
+            policy.AllowAnyOrigin()
+                .AllowAnyHeader()
+                .AllowAnyMethod();
+        }
+        else
+        {
+            policy.WithOrigins(allowedCorsOrigins)
+                .AllowAnyHeader()
+                .AllowAnyMethod();
+        }
+    });
 });
 
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
@@ -97,16 +126,9 @@ using (var scope = app.Services.CreateScope())
         }
     }
 
-    if (!dbContext.Students.Any())
-    {
-        dbContext.Students.AddRange(
-            new Student { StudentId = "2026-001", FirstName = "Mika", LastName = "Reyes", Course = "BSIT", Section = "3A", ContactNumber = "0917 100 1101", RfidUid = "RFID2026001" },
-            new Student { StudentId = "2026-014", FirstName = "Aaron", LastName = "Cruz", Course = "BSCS", Section = "2B", ContactNumber = "0918 200 2202", RfidUid = "RFID2026014" },
-            new Student { StudentId = "2026-027", FirstName = "Lia", LastName = "Santos", Course = "BSIS", Section = "4A", ContactNumber = "0919 300 3303", RfidUid = "RFID2026027" },
-            new Student { StudentId = "2026-035", FirstName = "Noah", LastName = "Dela Cruz", Course = "BSIT", Section = "1C", ContactNumber = "0920 400 4404", RfidUid = "RFID2026035" });
-        dbContext.SaveChanges();
-    }
-    else
+    // Do not seed demo student data. Keep the database empty until real student records
+    // are created through the application or imported externally.
+    if (dbContext.Students.Any())
     {
         var demoRfids = new Dictionary<string, string>
         {
@@ -123,6 +145,22 @@ using (var scope = app.Services.CreateScope())
                 student.RfidUid = rfidUid;
             }
         }
+
+        dbContext.SaveChanges();
+    }
+
+    if (!dbContext.Users.Any())
+    {
+        var adminUsername = Environment.GetEnvironmentVariable("APP_ADMIN_USERNAME") ?? "admin";
+        var adminPassword = Environment.GetEnvironmentVariable("APP_ADMIN_PASSWORD") ?? "Admin123!";
+
+        dbContext.Users.Add(new User
+        {
+            Username = adminUsername,
+            PasswordHash = PasswordHasher.HashPassword(adminPassword),
+            Role = UserRole.Administrator,
+            IsActive = true
+        });
 
         dbContext.SaveChanges();
     }

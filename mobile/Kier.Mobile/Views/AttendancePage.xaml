@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="Kier.Mobile.Views.AttendancePage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    BackgroundColor="White">
+
+    <ScrollView>
+        <VerticalStackLayout Padding="24" Spacing="18">
+            <Label Text="Scan Attendance" FontSize="28" TextColor="#2563eb" HorizontalOptions="Center" />
+            <Label Text="Event" />
+            <Picker x:Name="EventPicker" Title="Select existing event" ItemDisplayBinding="{Binding Title}" />
+            <Button Text="Refresh Events" Clicked="OnRefreshEventsClicked" />
+            <Label Text="Or create a new event" FontAttributes="Italic" />
+            <Entry x:Name="EventTitleEntry" Placeholder="New event title" />
+            <Label Text="Location" />
+            <Entry x:Name="LocationEntry" Placeholder="Room 101" />
+            <Label Text="Student ID or RFID" />
+            <Entry x:Name="StudentNoEntry" Placeholder="123456 or RFID code" />
+            <Button Text="Scan QR / Barcode" Clicked="OnScanQrClicked" />
+            <Label Text="Remarks" />
+            <Entry x:Name="RemarksEntry" Placeholder="On time" />
+            <Button Text="Record Attendance" Clicked="OnScanClicked" />
+            <Label x:Name="ResultLabel" TextColor="#0f172a" />
+            <Button Text="Logout" Clicked="OnLogoutClicked" />
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

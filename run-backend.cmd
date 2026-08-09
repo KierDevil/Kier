@@ -8,10 +8,13 @@ set "NUGET_PACKAGES=%~dp0packages"
 set "APPDATA=%~dp0.dotnet-home\AppData\Roaming"
 set "LOCALAPPDATA=%~dp0.dotnet-home\AppData\Local"
 
-if exist "%~dp0.dotnet\dotnet.exe" (
-    "%~dp0.dotnet\dotnet.exe" restore
-    "%~dp0.dotnet\dotnet.exe" run --urls http://localhost:5000
+set "LOCAL_DOTNET=%~dp0.dotnet\dotnet.exe"
+if not exist "%LOCAL_DOTNET%" set "LOCAL_DOTNET=%~dp0..\.dotnet\dotnet.exe"
+
+if exist "%LOCAL_DOTNET%" (
+    "%LOCAL_DOTNET%" restore
+    "%LOCAL_DOTNET%" run --urls http://0.0.0.0:5000
 ) else (
     dotnet restore
-    dotnet run --urls http://localhost:5000
+    dotnet run --urls http://0.0.0.0:5000
 )

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="Kier.Mobile.Views.QRScanPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:zxing="clr-namespace:ZXing.Net.Maui.Controls;assembly=ZXing.Net.MAUI.Controls"
+    BackgroundColor="White">
+
+    <VerticalStackLayout Padding="24" Spacing="18" VerticalOptions="Center" HorizontalOptions="Center">
+        <Label Text="Scan QR Code" FontSize="28" TextColor="#2563eb" HorizontalOptions="Center" />
+        <Button x:Name="ScanButton" Text="Start Scan" Clicked="OnScanButtonClicked" />
+        <Frame Padding="0" HasShadow="True" BackgroundColor="#e2e8f0" HeightRequest="360" WidthRequest="320">
+            <zxing:CameraBarcodeReaderView x:Name="CameraBarcodeView"
+                                           IsDetecting="False"
+                                           BarcodesDetected="OnBarcodeDetected"
+                                           HorizontalOptions="Fill" VerticalOptions="Fill" />
+        </Frame>
+        <Label x:Name="ScanResultLabel" TextColor="#0f172a" HorizontalOptions="Center" />
+        <Button Text="Cancel" Clicked="OnCancelClicked" />
+    </VerticalStackLayout>
+</ContentPage>

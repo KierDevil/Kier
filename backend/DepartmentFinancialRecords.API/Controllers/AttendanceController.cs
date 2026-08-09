@@ -1,12 +1,14 @@
 using DepartmentFinancialRecords.API.Data;
 using DepartmentFinancialRecords.API.Models;
 using DepartmentFinancialRecords.API.Utilities;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 namespace DepartmentFinancialRecords.API.Controllers
 {
     [ApiController]
+    [Authorize]
     [Route("api/[controller]")]
     public class AttendanceController : ControllerBase
     {
@@ -30,6 +32,108 @@ namespace DepartmentFinancialRecords.API.Controllers
             return Ok(records.Select(record => AttendanceRecordDto.FromRecord(record)));
         }
 
+        [HttpGet("events")]
+        public async Task<ActionResult<IEnumerable<AttendanceEventDto>>> GetEvents()
+        {
+            var events = await _dbContext.AttendanceEvents
+                .OrderByDescending(item => item.EventDate)
+                .Select(item => new AttendanceEventDto(
+                    item.Id,
+                    item.Title,
+                    item.EventDate,
+                    item.Location,
+                    item.Description,
+                    _dbContext.AttendanceRecords.Count(record => record.AttendanceEventId == item.Id)))
+                .ToListAsync();
+
+            return Ok(events);
+        }
+
+        [HttpPost("events")]
+        public async Task<ActionResult<AttendanceEventDetailDto>> CreateEvent(CreateAttendanceEventRequest request)
+        {
+            var title = request.Title.Trim();
+            if (string.IsNullOrWhiteSpace(title))
+            {
+                return BadRequest(new { message = "Event title is required." });
+            }
+
+            var existingEvent = await _dbContext.AttendanceEvents
+                .FirstOrDefaultAsync(item => item.Title == title && item.EventDate.Date == (request.EventDate ?? DateTime.UtcNow).Date);
+
+            if (existingEvent is not null)
+            {
+                return Conflict(new { message = "An event with the same title and date already exists." });
+            }
+
+            var newEvent = new AttendanceEvent
+            {
+                Title = title,
+                EventDate = request.EventDate ?? DateTime.UtcNow,
+                Location = request.Location?.Trim() ?? string.Empty,
+                Description = request.Description?.Trim() ?? string.Empty
+            };
+
+            _dbContext.AttendanceEvents.Add(newEvent);
+            await _dbContext.SaveChangesAsync();
+
+            return CreatedAtAction(nameof(GetEvent), new { id = newEvent.Id }, new AttendanceEventDetailDto(
+                newEvent.Id,
+                newEvent.Title,
+                newEvent.EventDate,
+                newEvent.Location,
+                newEvent.Description,
+                0,
+                Array.Empty<AttendanceRecordDto>()));
+        }
+
+        [HttpGet("events/{id:int}")]
+        public async Task<ActionResult<AttendanceEventDetailDto>> GetEvent(int id)
+        {
+            var eventItem = await _dbContext.AttendanceEvents
+                .FirstOrDefaultAsync(item => item.Id == id);
+
+            if (eventItem is null)
+            {
+                return NotFound(new { message = "Attendance event not found." });
+            }
+
+            var records = await _dbContext.AttendanceRecords
+                .Include(record => record.Student)
+                .Include(record => record.AttendanceEvent)
+                .Where(record => record.AttendanceEventId == id)
+                .OrderByDescending(record => record.RecordedAt)
+                .ToListAsync();
+
+            return Ok(new AttendanceEventDetailDto(
+                eventItem.Id,
+                eventItem.Title,
+                eventItem.EventDate,
+                eventItem.Location,
+                eventItem.Description,
+                records.Count,
+                records.Select(record => AttendanceRecordDto.FromRecord(record)).ToArray()));
+        }
+
+        [HttpGet("events/{id:int}/records")]
+        public async Task<ActionResult<IEnumerable<AttendanceRecordDto>>> GetEventRecords(int id)
+        {
+            var eventItem = await _dbContext.AttendanceEvents.FirstOrDefaultAsync(item => item.Id == id);
+            if (eventItem is null)
+            {
+                return NotFound(new { message = "Attendance event not found." });
+            }
+
+            var records = await _dbContext.AttendanceRecords
+                .Include(record => record.Student)
+                .Include(record => record.AttendanceEvent)
+                .Where(record => record.AttendanceEventId == id)
+                .OrderByDescending(record => record.RecordedAt)
+                .ToListAsync();
+
+            return Ok(records.Select(record => AttendanceRecordDto.FromRecord(record)));
+        }
+
         [HttpPost("scan")]
         public async Task<ActionResult<AttendanceRecordDto>> Scan(ScanAttendanceRequest request)
         {
@@ -48,11 +152,6 @@ namespace DepartmentFinancialRecords.API.Controllers
             if (request.OpenAt.HasValue && now < request.OpenAt.Value)
             {
                 return BadRequest(new { message = $"Attendance opens at {request.OpenAt.Value:g}." });
-            }
-
-            if (request.CloseAt.HasValue && now > request.CloseAt.Value)
-            {
-                return BadRequest(new { message = $"Attendance closed at {request.CloseAt.Value:g}." });
             }
 
             var title = string.IsNullOrWhiteSpace(request.EventTitle) ? "Attendance Scan" : request.EventTitle.Trim();
@@ -97,13 +196,7 @@ namespace DepartmentFinancialRecords.API.Controllers
 
             if (existingRecord is not null)
             {
-                existingRecord.Status = status;
-                existingRecord.RecordedAt = DateTime.UtcNow;
-                existingRecord.Remarks = BuildRemarks(request.Remarks, minutesLate, lateFineAmount, "Updated by QR/RFID scan.");
-                await UpsertLateFine(student.Id, title, lateFineAmount, minutesLate);
-                await _dbContext.SaveChangesAsync();
-
-                return Ok(AttendanceRecordDto.FromRecord(existingRecord, minutesLate, lateFineAmount));
+                return Ok(AttendanceRecordDto.FromRecord(existingRecord, isDuplicate: true));
             }
 
             var record = new AttendanceRecord
@@ -137,13 +230,7 @@ namespace DepartmentFinancialRecords.API.Controllers
                     throw;
                 }
 
-                concurrentRecord.Status = status;
-                concurrentRecord.RecordedAt = DateTime.UtcNow;
-                concurrentRecord.Remarks = BuildRemarks(request.Remarks, minutesLate, lateFineAmount, "Updated by simultaneous scan.");
-                await UpsertLateFine(student.Id, title, lateFineAmount, minutesLate);
-                await _dbContext.SaveChangesAsync();
-
-                return Ok(AttendanceRecordDto.FromRecord(concurrentRecord, minutesLate, lateFineAmount));
+                return Ok(AttendanceRecordDto.FromRecord(concurrentRecord, isDuplicate: true));
             }
 
             record.Student = student;
@@ -209,6 +296,29 @@ namespace DepartmentFinancialRecords.API.Controllers
         }
     }
 
+    public record CreateAttendanceEventRequest(
+        string Title,
+        DateTime? EventDate,
+        string? Location,
+        string? Description);
+
+    public record AttendanceEventDto(
+        int Id,
+        string Title,
+        DateTime EventDate,
+        string Location,
+        string Description,
+        int TotalRecords);
+
+    public record AttendanceEventDetailDto(
+        int Id,
+        string Title,
+        DateTime EventDate,
+        string Location,
+        string Description,
+        int TotalRecords,
+        AttendanceRecordDto[] Records);
+
     public record ScanAttendanceRequest(
         string? StudentNo,
         string? RfidUid,
@@ -231,9 +341,14 @@ namespace DepartmentFinancialRecords.API.Controllers
         string Status,
         DateTime RecordedAt,
         int MinutesLate,
-        decimal LateFineAmount)
+        decimal LateFineAmount,
+        bool IsDuplicate)
     {
-        public static AttendanceRecordDto FromRecord(AttendanceRecord record, int minutesLate = 0, decimal lateFineAmount = 0)
+        public static AttendanceRecordDto FromRecord(
+            AttendanceRecord record,
+            int minutesLate = 0,
+            decimal lateFineAmount = 0,
+            bool isDuplicate = false)
         {
             var studentName = record.Student is null
                 ? "Unknown student"
@@ -248,7 +363,8 @@ namespace DepartmentFinancialRecords.API.Controllers
                 record.Status.ToString(),
                 record.RecordedAt,
                 minutesLate,
-                lateFineAmount);
+                lateFineAmount,
+                isDuplicate);
         }
     }
 }
