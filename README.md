@@ -35,13 +35,22 @@ Install these on the PC:
 - Node.js and npm
 - MySQL Server
 
-Then update `backend/DepartmentFinancialRecords.API/appsettings.json` with that PC's MySQL connection string and password.
+Keep local passwords out of `appsettings.json`. Configure each PC's connection string and iCloud app-specific password in .NET User Secrets instead. From the project root, run:
+
+```powershell
+$env:APPDATA = "$PWD\.dotnet-home\AppData\Roaming"
+$project = ".\backend\DepartmentFinancialRecords.API\DepartmentFinancialRecords.API.csproj"
+dotnet user-secrets set --project $project "ConnectionStrings:DefaultConnection" "<your-local-MySQL-connection-string>"
+dotnet user-secrets set --project $project "Email:ICloud:SmtpPassword" "<your-iCloud-app-specific-password>"
+```
+
+Use your own database credentials and iCloud app-specific password. The `.dotnet-home` folder is local to each PC and is not pushed to GitHub.
 
 ## How to Run
 Run these in separate terminals.
 
 ### Database
-Use MySQL. Create a database named `DepartmentFinancialRecords`, then make sure the backend connection string points to it.
+Use MySQL. Create a database named `departmentfinancialrecords`, then configure its connection string in User Secrets as shown above.
 
 If using the local portable MySQL setup from this workspace, run:
 
@@ -51,7 +60,7 @@ mysql-8.4.10-winx64\bin\mysqld.exe --defaults-file=mysql-local.ini
 
 ### Backend
 1. Install .NET SDK 8.
-2. Update `backend/DepartmentFinancialRecords.API/appsettings.json` with your MySQL connection.
+2. Configure the database connection string in User Secrets.
 3. Run the API project from the `backend/DepartmentFinancialRecords.API` folder:
 
 ```powershell
@@ -89,7 +98,7 @@ From the project root, run:
 This script will open separate terminals for the backend and frontend. The backend runs at `http://localhost:5000`, and the frontend runs at `http://localhost:5173` by default.
 
 ## QR and RFID Attendance
-- QR payload format: `KIER:2026-001`
+- QR payload format: `SBC IT DEP:<student-id>`
 - RFID maps through the `RfidUid` column in the `students` table.
 - Attendance scans are saved through the backend API to MySQL.
 - Attendance supports open time, late time, close time, late fine per minute, max fine, and excused status.

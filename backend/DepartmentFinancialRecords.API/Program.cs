@@ -9,7 +9,7 @@ using System.Text;
 var builder = WebApplication.CreateBuilder(args);
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
     ?? Environment.GetEnvironmentVariable("DB_CONNECTION_STRING")
-    ?? "server=127.0.0.1;port=3307;database=DepartmentFinancialRecords;user=appuser;password=change-me;SslMode=None;AllowPublicKeyRetrieval=True;";
+    ?? "server=127.0.0.1;port=3308;database=departmentfinancialrecords;user=kier;SslMode=None;AllowPublicKeyRetrieval=True;";
 var jwtKey = builder.Configuration["Jwt:Key"]
     ?? Environment.GetEnvironmentVariable("JWT_KEY")
     ?? "KierDepartmentRecordsJwtSecretKey2026!";
@@ -96,35 +96,6 @@ using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
     dbContext.Database.EnsureCreated();
-
-    try
-    {
-        dbContext.Database.ExecuteSqlRaw("ALTER TABLE Students ADD COLUMN RfidUid longtext NOT NULL");
-    }
-    catch
-    {
-        // Existing local databases already have this column after the first RFID startup.
-    }
-
-    foreach (var sql in new[]
-    {
-        "ALTER TABLE Students MODIFY StudentId varchar(64) NOT NULL",
-        "ALTER TABLE Students MODIFY RfidUid varchar(128) NOT NULL",
-        "ALTER TABLE AttendanceEvents MODIFY Title varchar(200) NOT NULL",
-        "CREATE UNIQUE INDEX IX_Students_StudentId ON Students (StudentId)",
-        "CREATE INDEX IX_Students_RfidUid ON Students (RfidUid)",
-        "CREATE UNIQUE INDEX IX_AttendanceRecords_StudentId_AttendanceEventId ON AttendanceRecords (StudentId, AttendanceEventId)"
-    })
-    {
-        try
-        {
-            dbContext.Database.ExecuteSqlRaw(sql);
-        }
-        catch
-        {
-            // Existing databases may already have these columns/indexes.
-        }
-    }
 
     // Do not seed demo student data. Keep the database empty until real student records
     // are created through the application or imported externally.

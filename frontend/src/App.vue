@@ -134,7 +134,7 @@
               <h2>Priority Students</h2>
               <span>Students with balances or recent attendance concerns</span>
             </div>
-            <button type="button" @click="setView('students')">Open Directory</button>
+            <button type="button" @click="setView('student-info')">Open Student Info</button>
           </div>
           <table>
             <thead>
@@ -156,6 +156,36 @@
           </table>
         </section>
         
+      </section>
+
+      <section v-else-if="activeView === 'student-info'" class="student-info-view view-stack">
+        <div class="student-info-heading">
+          <h2>Student Information</h2>
+          <span>{{ sortedStudents.length }} records</span>
+        </div>
+        <div v-if="sortedStudents.length" class="student-info-list">
+          <article v-for="student in sortedStudents" :key="student.id" class="student-info-row">
+            <dl class="student-info-fields">
+              <div><dt>Student ID</dt><dd>{{ student.studentNo }}</dd></div>
+              <div><dt>Name</dt><dd>{{ student.name }}</dd></div>
+              <div><dt>Course</dt><dd>{{ student.course || 'Not provided' }}</dd></div>
+              <div><dt>Year</dt><dd>{{ student.yearLevel || 'Not provided' }}</dd></div>
+              <div><dt>Contact</dt><dd>{{ student.contact || 'Not provided' }}</dd></div>
+              <div><dt>Email</dt><dd>{{ student.email || 'Not provided' }}</dd></div>
+              <div><dt>RFID UID</dt><dd>{{ student.rfidUid || 'Not mapped' }}</dd></div>
+            </dl>
+            <figure class="student-info-qr">
+              <img
+                v-if="studentQrCodes[student.studentNo]"
+                :src="studentQrCodes[student.studentNo]"
+                :alt="`QR code for ${student.name}`"
+              />
+              <span v-else>QR generating</span>
+              <figcaption>{{ student.studentNo }}</figcaption>
+            </figure>
+          </article>
+        </div>
+        <p v-else class="empty-state">No student records found.</p>
       </section>
 
       <section v-else-if="activeView === 'students'" class="data-layout">
@@ -235,28 +265,34 @@
               </label>
             </div>
           </div>
-          <table> 
+          <div class="student-directory-wrap">
+          <table class="student-directory-table">
             <thead>
               <tr>
-                <th>ID</th>
-                <th>Name</th>
-                <th>Course</th>
-                <th>RFID</th>
+                <th>Student</th>
+                <th>Contact</th>
                 <th>Balance</th>
-                <th>Action</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               <template v-if="studentGroupBy === 'none'">
                 <tr v-for="student in sortedStudents" :key="student.id">
-                  <td>{{ student.studentNo }}</td>
-                  <td>
+                  <td class="student-primary-cell">
                     <button type="button" class="row-link" @click="selectStudent(student.id)">{{ student.name }}</button>
+                    <small>{{ student.studentNo }} · {{ student.course }} {{ student.yearLevel }}</small>
+                    <small>RFID: {{ student.rfidUid || 'Not mapped' }}</small>
                   </td>
-                  <td>{{ student.course }} {{ student.yearLevel }}</td>
-                  <td>{{ student.rfidUid || 'Not mapped' }}</td>
-                  <td>{{ money(balanceFor(student.id)) }}</td>
+                  <td class="student-contact-cell">
+                    <span>{{ student.contact || 'Not provided' }}</span>
+                    <small>{{ student.email || 'No email provided' }}</small>
+                  </td>
+                  <td class="student-balance-cell">
+                    <strong>{{ money(balanceFor(student.id)) }}</strong>
+                    <small>{{ attendanceFor(student.id) }}% attendance</small>
+                  </td>
                   <td class="table-actions">
+                    <button type="button" @click="selectStudent(student.id)">View QR</button>
                     <button type="button" @click="editStudent(student)">Edit</button>
                     <button type="button" @click="removeStudent(student.id)">Delete</button>
                   </td>
@@ -265,17 +301,24 @@
               <template v-else>
                 <template v-for="group in groupedStudents" :key="group.group">
                   <tr class="group-row">
-                    <td colspan="6"><strong>{{ group.group }}</strong></td>
+                    <td colspan="4"><strong>{{ group.group }}</strong></td>
                   </tr>
                   <tr v-for="student in group.items" :key="student.id">
-                    <td>{{ student.studentNo }}</td>
-                    <td>
+                    <td class="student-primary-cell">
                       <button type="button" class="row-link" @click="selectStudent(student.id)">{{ student.name }}</button>
+                      <small>{{ student.studentNo }} · {{ student.course }} {{ student.yearLevel }}</small>
+                      <small>RFID: {{ student.rfidUid || 'Not mapped' }}</small>
                     </td>
-                    <td>{{ student.course }}</td>
-                    <td>{{ student.rfidUid || 'Not mapped' }}</td>
-                    <td>{{ money(balanceFor(student.id)) }}</td>
+                    <td class="student-contact-cell">
+                      <span>{{ student.contact || 'Not provided' }}</span>
+                      <small>{{ student.email || 'No email provided' }}</small>
+                    </td>
+                    <td class="student-balance-cell">
+                      <strong>{{ money(balanceFor(student.id)) }}</strong>
+                      <small>{{ attendanceFor(student.id) }}% attendance</small>
+                    </td>
                     <td class="table-actions">
+                      <button type="button" @click="selectStudent(student.id)">View QR</button>
                       <button type="button" @click="editStudent(student)">Edit</button>
                       <button type="button" @click="removeStudent(student.id)">Delete</button>
                     </td>
@@ -284,6 +327,7 @@
               </template>
             </tbody>
           </table>
+          </div>
         </section>
 
         
@@ -1049,12 +1093,18 @@
           <img v-if="studentQrCodes[selectedStudent.studentNo]" :src="studentQrCodes[selectedStudent.studentNo]" :alt="`QR code for ${selectedStudent.name}`" />
           <figcaption>{{ qrPayload(selectedStudent.studentNo) }}</figcaption>
         </figure>
-        <div class="mini-stats">
-          <span>Balance <strong>{{ money(balanceFor(selectedStudent.id)) }}</strong></span>
-          <span>Attendance <strong>{{ attendanceFor(selectedStudent.id) }}%</strong></span>
-          <span>Contact <strong>{{ selectedStudent.contact || 'No contact' }}</strong></span>
-          <span>RFID <strong>{{ selectedStudent.rfidUid || 'Not mapped' }}</strong></span>
-        </div>
+        <button type="button" class="secondary-action" @click="downloadStudentQr(selectedStudent)">Download QR code</button>
+        <button type="button" class="secondary-action" @click="sendStudentQrEmail(selectedStudent)">Email QR code</button>
+        <dl class="student-details">
+          <div><dt>Student ID</dt><dd>{{ selectedStudent.studentNo }}</dd></div>
+          <div><dt>Course</dt><dd>{{ selectedStudent.course || 'Not provided' }}</dd></div>
+          <div><dt>Year</dt><dd>{{ selectedStudent.yearLevel || 'Not provided' }}</dd></div>
+          <div><dt>Contact</dt><dd>{{ selectedStudent.contact || 'Not provided' }}</dd></div>
+          <div><dt>Email</dt><dd>{{ selectedStudent.email || 'Not provided' }}</dd></div>
+          <div><dt>RFID UID</dt><dd>{{ selectedStudent.rfidUid || 'Not mapped' }}</dd></div>
+          <div><dt>Balance</dt><dd>{{ money(balanceFor(selectedStudent.id)) }}</dd></div>
+          <div><dt>Attendance</dt><dd>{{ attendanceFor(selectedStudent.id) }}%</dd></div>
+        </dl>
       </aside>
     </main>
   </div>
@@ -1067,8 +1117,6 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 
 const storageKey = 'kier-records-v2';
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
-const requiredQrPayload = '1162304531';
-
 const activeView = ref('dashboard');
 const searchTerm = ref('');
 const selectedStudentId = ref(null);
@@ -1121,7 +1169,8 @@ const emailComposer = reactive({
 
 const navItems = [
   { id: 'dashboard', label: 'Dashboard', short: 'DB' },
-  { id: 'students', label: 'Students', short: 'ST' },
+  { id: 'students', label: 'Student Management', short: 'SM' },
+  { id: 'student-info', label: 'Student Info', short: 'SI' },
   { id: 'collections', label: 'Collections', short: 'CO' },
   { id: 'fines', label: 'Fines', short: 'FI' },
   { id: 'attendance', label: 'Attendance', short: 'AT' },
@@ -1133,7 +1182,8 @@ const navItems = [
 
 const sections = {
   dashboard: { eyebrow: 'Overview', title: 'Department records dashboard', action: 'Add Receipt' },
-  students: { eyebrow: 'Directory', title: 'Students and balances', action: 'Add Student' },
+  students: { eyebrow: 'Management', title: 'Student management', action: 'Add Student' },
+  'student-info': { eyebrow: 'Directory', title: 'Student information', action: 'View Students' },
   collections: { eyebrow: 'Ledger', title: 'Collections and receipts', action: 'Add Receipt' },
   fines: { eyebrow: 'Register', title: 'Fines and payment status', action: 'Add Fine' },
   admin: { eyebrow: 'Admin', title: 'Student billing and edits', action: 'Admin Actions' },
@@ -1508,7 +1558,7 @@ async function loadBackendData() {
     ]);
 
     if (studentsResponse.ok) {
-      students.value = await studentsResponse.json();
+      students.value = (await studentsResponse.json()).map(normalizeStudentRecord);
     }
 
     if (collectionsResponse.ok) {
@@ -1614,6 +1664,8 @@ function normalizeStudentRecord(student) {
     lastName,
     suffix,
     name: [firstName, lastName, suffix].filter(Boolean).join(' ') || String(student.name || '').trim(),
+    contact: String(student.contact ?? student.contactNumber ?? '').trim(),
+    email: String(student.email || '').trim(),
     rfidUid: student.rfidUid || '',
   };
 }
@@ -1780,7 +1832,7 @@ function seedSampleStudent() {
 }
 
 function qrPayload(studentNo) {
-  return requiredQrPayload;
+  return `SBC IT DEP:${String(studentNo || '').trim()}`;
 }
 
 function parseQrPayload(value) {
@@ -1789,7 +1841,14 @@ function parseQrPayload(value) {
     return '';
   }
 
-  return cleaned.toUpperCase().startsWith('KIER:') ? cleaned.slice(5).trim() : cleaned;
+  const upperValue = cleaned.toUpperCase();
+  for (const prefix of ['SBC IT DEP:', 'IT DEP:', 'KIER:']) {
+    if (upperValue.startsWith(prefix)) {
+      return cleaned.slice(prefix.length).trim();
+    }
+  }
+
+  return cleaned;
 }
 
 function normalizeRfid(value) {
@@ -1811,6 +1870,19 @@ async function generateStudentQrCodes() {
   }
 
   studentQrCodes.value = nextCodes;
+}
+
+function downloadStudentQr(student) {
+  const qrDataUrl = studentQrCodes.value[student.studentNo];
+  if (!qrDataUrl) {
+    notify('QR code is still being generated');
+    return;
+  }
+
+  const link = document.createElement('a');
+  link.href = qrDataUrl;
+  link.download = `${student.studentNo}-qr.png`;
+  link.click();
 }
 
 function filterBy(records, valuesFor) {
@@ -2061,10 +2133,7 @@ async function saveStudent() {
     logActivity('Student', `${student.name} added`, 'New student record created');
 
     if (student.email) {
-      const qrEmailSent = await sendStudentQrEmail(student);
-      if (qrEmailSent) {
-        notify('Student saved and QR code email sent');
-      }
+      await sendStudentQrEmail(student);
     } else {
       notify('Student saved. No QR email was sent because no email address was provided.');
     }
@@ -2074,12 +2143,25 @@ async function saveStudent() {
 }
 
 async function sendStudentQrEmail(student) {
-  const qrDataUrl = studentQrCodes.value[student.studentNo];
-  if (!student.email || !qrDataUrl) {
+  if (!student.email) {
+    notify('Add an email address to this student profile before sending the QR code.');
     return false;
   }
 
   try {
+    let qrDataUrl = studentQrCodes.value[student.studentNo];
+    if (!qrDataUrl) {
+      qrDataUrl = await QRCode.toDataURL(qrPayload(student.studentNo), {
+        width: 240,
+        margin: 2,
+        color: {
+          dark: '#142027',
+          light: '#ffffff',
+        },
+      });
+      studentQrCodes.value = { ...studentQrCodes.value, [student.studentNo]: qrDataUrl };
+    }
+
     const response = await apiFetch('/api/email/student-qr', {
       method: 'POST',
       body: JSON.stringify({
@@ -2103,14 +2185,15 @@ async function sendStudentQrEmail(student) {
       const message = result?.message || response.statusText || 'Email send failed';
       const errorDetail = result?.error || details || '';
       notify(
-        `Student saved, but QR code email could not be sent: ${message}${errorDetail ? ` (${errorDetail})` : ''}`,
+        `QR code email could not be sent: ${message}${errorDetail ? ` (${errorDetail})` : ''}`,
       );
       return false;
     }
 
+    notify(`QR code email sent to ${student.email}`);
     return true;
   } catch (error) {
-    notify(`Student saved, but QR code email could not be sent: ${error instanceof Error ? error.message : String(error)}`);
+    notify(`QR code email could not be sent: ${error instanceof Error ? error.message : String(error)}`);
     return false;
   }
 }
@@ -4525,6 +4608,50 @@ table {
   border-collapse: collapse;
 }
 
+.student-directory-wrap {
+  width: 100%;
+  min-width: 0;
+}
+
+.student-directory-table {
+  table-layout: fixed;
+}
+
+.student-directory-table th:nth-child(1) {
+  width: 29%;
+}
+
+.student-directory-table th:nth-child(2) {
+  width: 27%;
+}
+
+.student-directory-table th:nth-child(3) {
+  width: 15%;
+}
+
+.student-directory-table th:nth-child(4) {
+  width: 29%;
+}
+
+.student-directory-table th,
+.student-directory-table td {
+  padding: 16px 12px;
+  overflow-wrap: anywhere;
+}
+
+.student-primary-cell,
+.student-contact-cell,
+.student-balance-cell {
+  display: grid;
+  align-content: center;
+  gap: 5px;
+}
+
+.student-directory-table td small {
+  color: #60717a;
+  font-size: 0.82rem;
+}
+
 th,
 td {
   padding: 14px 20px;
@@ -4551,6 +4678,97 @@ tbody tr:hover {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.student-directory-table .table-actions {
+  gap: 6px;
+}
+
+.student-directory-table .table-actions button {
+  padding: 8px 10px;
+  font-size: 0.78rem;
+  white-space: normal;
+}
+
+.student-info-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #d7e0e4;
+}
+
+.student-info-heading h2 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.student-info-heading span,
+.student-info-identity > span,
+.student-info-identity small {
+  color: #60717a;
+}
+
+.student-info-list {
+  display: grid;
+}
+
+.student-info-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 112px;
+  gap: 24px;
+  padding: 22px 0;
+  border-bottom: 1px solid #edf1f3;
+}
+
+.student-info-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  margin: 0;
+}
+
+.student-info-fields div {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.3fr) minmax(0, 1fr);
+  gap: 16px;
+  min-width: 0;
+  padding: 10px 0;
+  border-bottom: 1px solid #edf1f3;
+}
+
+.student-info-fields dt {
+  color: #60717a;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.student-info-fields dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.student-info-qr {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 6px;
+  margin: 0;
+}
+
+.student-info-qr img {
+  width: 96px;
+  height: 96px;
+}
+
+.student-info-qr span,
+.student-info-qr figcaption {
+  color: #60717a;
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+  text-align: center;
 }
 
 .chart-list {
@@ -4986,6 +5204,8 @@ tbody tr:hover {
   right: 24px;
   bottom: 24px;
   width: min(360px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
   padding: 20px;
   box-shadow: 0 18px 50px rgba(20, 32, 39, 0.18);
 }
@@ -5020,21 +5240,29 @@ tbody tr:hover {
   font-weight: 800;
 }
 
-.mini-stats {
+.student-details {
   display: grid;
-  gap: 10px;
-  margin-top: 18px;
+  gap: 0;
+  margin: 18px 0 0;
 }
 
-.mini-stats span {
-  border-radius: 8px;
-  padding: 12px;
-  background: #f4f8f9;
+.student-details div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid #edf1f3;
+}
+
+.student-details dt {
   color: #60717a;
 }
 
-.mini-stats strong {
-  color: #142027;
+.student-details dd {
+  margin: 0;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+  text-align: right;
 }
 
 @media (max-width: 1040px) {
@@ -5099,6 +5327,70 @@ tbody tr:hover {
 
   .absent-event-list article div:last-child {
     justify-items: start;
+  }
+}
+
+@media (max-width: 640px) {
+  .student-directory-table,
+  .student-directory-table tbody {
+    display: block;
+  }
+
+  .student-directory-table thead {
+    display: none;
+  }
+
+  .student-directory-table tbody tr:not(.group-row) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+    padding: 16px 12px;
+  }
+
+  .student-directory-table tbody td {
+    display: block;
+    padding: 0;
+    border: 0;
+  }
+
+  .student-directory-table tbody td:nth-child(1),
+  .student-directory-table tbody td:nth-child(2) {
+    grid-column: 1 / -1;
+  }
+
+  .student-directory-table tbody td:nth-child(4) {
+    justify-self: end;
+  }
+
+  .student-directory-table tbody tr.group-row {
+    display: block;
+  }
+
+  .student-directory-table tbody tr.group-row td {
+    display: block;
+    padding: 16px 12px 8px;
+  }
+
+  .student-info-heading {
+    align-items: flex-start;
+  }
+
+  .student-info-row {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .student-info-qr {
+    justify-self: start;
+  }
+
+  .student-info-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .student-info-fields div {
+    grid-template-columns: minmax(96px, 0.35fr) minmax(0, 1fr);
+    gap: 10px;
   }
 }
 

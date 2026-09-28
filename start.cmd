@@ -17,7 +17,7 @@ set "LOCAL_BACKEND_START=%~dp0run-backend.cmd"
 set "LOCAL_FRONTEND_START=%~dp0run-frontend.cmd"
 
 rem Kill duplicate app instances to keep one local setup only.
-for %%P in (5000 5173 5174 3307) do (
+for %%P in (5000 5173 5174 3308) do (
     for /f "skip=5 tokens=5" %%A in ('netstat -ano ^| findstr ":%%P " 2^>nul') do (
         taskkill /f /pid %%A >nul 2>&1
     )
@@ -27,9 +27,9 @@ echo.
 
 rem Database
 if exist "%LOCAL_MYSQL%" (
-    netstat -ano | find ":3307" >nul
+    netstat -ano | find ":3308" >nul
     if errorlevel 1 (
-        echo Starting local MySQL on port 3307...
+        echo Starting local MySQL on port 3308...
         start "Kier MySQL" "%LOCAL_MYSQL_START%"
         timeout /t 5 /nobreak >nul
     ) else (
