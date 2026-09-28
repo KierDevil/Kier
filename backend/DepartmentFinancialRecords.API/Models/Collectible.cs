@@ -10,6 +10,9 @@ namespace DepartmentFinancialRecords.API.Models
         public int StudentId { get; set; }
         public Student? Student { get; set; }
 
+        public int? DepartmentBillId { get; set; }
+        public DepartmentBill? DepartmentBill { get; set; }
+
         [Required]
         public string Description { get; set; } = string.Empty;
 

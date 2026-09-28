@@ -62,6 +62,7 @@ namespace DepartmentFinancialRecords.API.Controllers
         }
 
         [HttpPost]
+        [Authorize(Roles = "Administrator,Treasurer,Officer")]
         public async Task<ActionResult<FineDto>> Create(CreateFineRequest request)
         {
             var studentExists = await _dbContext.Students.AnyAsync(student => student.Id == request.StudentId && student.IsActive);
@@ -95,6 +96,7 @@ namespace DepartmentFinancialRecords.API.Controllers
         }
 
         [HttpPut("{id:int}")]
+        [Authorize(Roles = "Administrator,Treasurer,Officer")]
         public async Task<ActionResult<FineDto>> Update(int id, CreateFineRequest request)
         {
             var fine = await _dbContext.Fines
@@ -133,6 +135,7 @@ namespace DepartmentFinancialRecords.API.Controllers
         }
 
         [HttpDelete("{id:int}")]
+        [Authorize(Roles = "Administrator,Treasurer,Officer")]
         public async Task<IActionResult> Delete(int id)
         {
             var fine = await _dbContext.Fines.FirstOrDefaultAsync(item => item.Id == id);

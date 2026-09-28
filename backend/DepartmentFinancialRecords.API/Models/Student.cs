@@ -16,6 +16,10 @@ namespace DepartmentFinancialRecords.API.Models
         [Required]
         public string LastName { get; set; } = string.Empty;
 
+        public int? CourseId { get; set; }
+        public Course? CourseOption { get; set; }
+        public int? YearLevelId { get; set; }
+        public YearLevel? YearLevelOption { get; set; }
         public string Course { get; set; } = string.Empty;
         public string YearLevel { get; set; } = string.Empty;
         public string ContactNumber { get; set; } = string.Empty;

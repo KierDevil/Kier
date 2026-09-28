@@ -38,17 +38,17 @@ namespace DepartmentFinancialRecords.API.Controllers
             var user = await _dbContext.Users
                 .FirstOrDefaultAsync(item => item.Username == username && item.IsActive);
 
-            if (user is null || !PasswordHasher.VerifyPassword(password, user.PasswordHash))
+            if (user is not null && PasswordHasher.VerifyPassword(password, user.PasswordHash))
             {
-                return Unauthorized(new { message = "Invalid username or password." });
+                var token = GenerateJwtToken(user);
+                return Ok(new LoginResponse(
+                    user.Id,
+                    user.Username,
+                    user.Role.ToString(),
+                    token));
             }
 
-            var token = GenerateJwtToken(user);
-            return Ok(new LoginResponse(
-                user.Id,
-                user.Username,
-                user.Role.ToString(),
-                token));
+            return Unauthorized(new { message = "Invalid username or password." });
         }
 
         [HttpPost("register")]
@@ -77,7 +77,7 @@ namespace DepartmentFinancialRecords.API.Controllers
             {
                 Username = username,
                 PasswordHash = PasswordHasher.HashPassword(password),
-                Role = Enum.TryParse<UserRole>(request.Role, true, out var role) ? role : UserRole.Officer,
+                Role = UserRole.Student,
                 IsActive = true
             };
 
@@ -102,8 +102,12 @@ namespace DepartmentFinancialRecords.API.Controllers
         private string GenerateJwtToken(User user)
         {
             var secretKey = _configuration["Jwt:Key"]
-                ?? Environment.GetEnvironmentVariable("JWT_KEY")
-                ?? "ChangeThisKeyBeforeProductionUse";
+                ?? Environment.GetEnvironmentVariable("JWT_KEY");
+
+            if (string.IsNullOrWhiteSpace(secretKey) || secretKey.Length < 32)
+            {
+                throw new InvalidOperationException("JWT signing key is not configured.");
+            }
 
             var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey));
             var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);

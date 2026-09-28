@@ -8,20 +8,18 @@ using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
-    ?? Environment.GetEnvironmentVariable("DB_CONNECTION_STRING")
-    ?? "server=127.0.0.1;port=3308;database=departmentfinancialrecords;user=kier;SslMode=None;AllowPublicKeyRetrieval=True;";
+    ?? Environment.GetEnvironmentVariable("DB_CONNECTION_STRING");
 var jwtKey = builder.Configuration["Jwt:Key"]
-    ?? Environment.GetEnvironmentVariable("JWT_KEY")
-    ?? "KierDepartmentRecordsJwtSecretKey2026!";
+    ?? Environment.GetEnvironmentVariable("JWT_KEY");
 
-if (string.IsNullOrWhiteSpace(jwtKey))
+if (string.IsNullOrWhiteSpace(connectionString))
 {
-    jwtKey = "KierDepartmentRecordsJwtSecretKey2026!";
+    throw new InvalidOperationException("Configure ConnectionStrings:DefaultConnection using User Secrets or an environment variable.");
 }
 
-if (jwtKey.Length < 32)
+if (string.IsNullOrWhiteSpace(jwtKey) || jwtKey.Length < 32)
 {
-    jwtKey = jwtKey.PadRight(32, '!');
+    throw new InvalidOperationException("Configure Jwt:Key with a secret of at least 32 characters using User Secrets or an environment variable.");
 }
 
 var allowedCorsOrigins = (builder.Configuration["AllowedCorsOrigins"] ?? Environment.GetEnvironmentVariable("ALLOWED_CORS_ORIGINS") ?? "*")
@@ -57,11 +55,6 @@ builder.Services.AddCors(options =>
 
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
 {
-    if (string.IsNullOrWhiteSpace(connectionString))
-    {
-        throw new InvalidOperationException("Missing DefaultConnection in configuration.");
-    }
-
     options.UseMySql(connectionString, new MySqlServerVersion(new Version(8, 0, 0)));
 });
 
@@ -80,7 +73,7 @@ builder.Services.AddAuthentication(options =>
         ValidateAudience = false,
         ValidateLifetime = true,
         ValidateIssuerSigningKey = true,
-        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey ?? "ReplaceWithSecureKeyForLocalDevelopmentOnly"))
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
     };
 });
 
@@ -95,45 +88,62 @@ if (app.Environment.IsDevelopment())
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-    dbContext.Database.EnsureCreated();
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
 
-    // Do not seed demo student data. Keep the database empty until real student records
-    // are created through the application or imported externally.
-    if (dbContext.Students.Any())
+    try
     {
-        var demoRfids = new Dictionary<string, string>
-        {
-            ["2026-001"] = "RFID2026001",
-            ["2026-014"] = "RFID2026014",
-            ["2026-027"] = "RFID2026027",
-            ["2026-035"] = "RFID2026035"
-        };
+        dbContext.Database.EnsureCreated();
 
-        foreach (var student in dbContext.Students.Where(student => string.IsNullOrWhiteSpace(student.RfidUid)))
+        if (!dbContext.Users.Any())
         {
-            if (demoRfids.TryGetValue(student.StudentId, out var rfidUid))
+            var adminUsername = builder.Configuration["BootstrapAdmin:Username"]
+                ?? Environment.GetEnvironmentVariable("APP_ADMIN_USERNAME");
+            var adminPassword = builder.Configuration["BootstrapAdmin:Password"]
+                ?? Environment.GetEnvironmentVariable("APP_ADMIN_PASSWORD");
+            if (string.IsNullOrWhiteSpace(adminUsername) || string.IsNullOrWhiteSpace(adminPassword))
             {
-                student.RfidUid = rfidUid;
+                throw new InvalidOperationException("Configure BootstrapAdmin:Username and BootstrapAdmin:Password before the first database startup.");
             }
+
+            var usersToSeed = new List<User>
+            {
+                new()
+                {
+                    Username = adminUsername.Trim(),
+                    PasswordHash = PasswordHasher.HashPassword(adminPassword),
+                    Role = UserRole.Administrator,
+                    IsActive = true
+                }
+            };
+
+            var userUsername = builder.Configuration["UserSeed:Username"]
+                ?? Environment.GetEnvironmentVariable("APP_USER_USERNAME");
+            var userPassword = builder.Configuration["UserSeed:Password"]
+                ?? Environment.GetEnvironmentVariable("APP_USER_PASSWORD");
+            if (string.IsNullOrWhiteSpace(userUsername) != string.IsNullOrWhiteSpace(userPassword))
+            {
+                throw new InvalidOperationException("Configure both UserSeed:Username and UserSeed:Password, or leave both unset.");
+            }
+
+            if (!string.IsNullOrWhiteSpace(userUsername))
+            {
+                usersToSeed.Add(new User
+                {
+                    Username = userUsername.Trim(),
+                    PasswordHash = PasswordHasher.HashPassword(userPassword!),
+                    Role = UserRole.Student,
+                    IsActive = true
+                });
+            }
+
+            dbContext.Users.AddRange(usersToSeed);
+            dbContext.SaveChanges();
         }
-
-        dbContext.SaveChanges();
     }
-
-    if (!dbContext.Users.Any())
+    catch (Exception exception)
     {
-        var adminUsername = Environment.GetEnvironmentVariable("APP_ADMIN_USERNAME") ?? "admin";
-        var adminPassword = Environment.GetEnvironmentVariable("APP_ADMIN_PASSWORD") ?? "Admin123!";
-
-        dbContext.Users.Add(new User
-        {
-            Username = adminUsername,
-            PasswordHash = PasswordHasher.HashPassword(adminPassword),
-            Role = UserRole.Administrator,
-            IsActive = true
-        });
-
-        dbContext.SaveChanges();
+        logger.LogError(exception, "Database initialization failed.");
+        throw;
     }
 }
 

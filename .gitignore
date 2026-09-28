@@ -9,6 +9,7 @@
 /.dotnet
 /.dotnet-home
 /packages
+/backend-build-check/
 /dotnet-install.ps1
 /mysql-*-winx64/
 /mysql-data/
@@ -17,6 +18,12 @@
 /jdk*/
 /jdk*.zip
 *.pid
+*.tmp
+*.db
+/stop
+
+# Private student data imports must not be committed.
+/private-data/
 
 # Vite build output
 /frontend/dist

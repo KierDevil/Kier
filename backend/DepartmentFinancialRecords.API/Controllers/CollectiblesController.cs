@@ -31,7 +31,8 @@ namespace DepartmentFinancialRecords.API.Controllers
                     item.Description,
                     item.AmountDue,
                     item.DueDate,
-                    item.IsPaid))
+                    item.IsPaid,
+                    item.DepartmentBillId))
                 .ToListAsync();
 
             return Ok(records);
@@ -53,10 +54,12 @@ namespace DepartmentFinancialRecords.API.Controllers
                 record.Description,
                 record.AmountDue,
                 record.DueDate,
-                record.IsPaid));
+                record.IsPaid,
+                record.DepartmentBillId));
         }
 
         [HttpPost]
+        [Authorize(Roles = "Administrator,Treasurer,Officer")]
         public async Task<ActionResult<CollectibleDto>> Create(CreateCollectibleRequest request)
         {
             var studentExists = await _dbContext.Students.AnyAsync(student => student.Id == request.StudentId && student.IsActive);
@@ -71,7 +74,8 @@ namespace DepartmentFinancialRecords.API.Controllers
                 Description = request.Description.Trim(),
                 AmountDue = request.AmountDue,
                 DueDate = request.DueDate ?? DateTime.UtcNow,
-                IsPaid = request.IsPaid ?? false
+                IsPaid = request.IsPaid ?? false,
+                DepartmentBillId = request.DepartmentBillId
             };
 
             _dbContext.Collectibles.Add(record);
@@ -84,10 +88,12 @@ namespace DepartmentFinancialRecords.API.Controllers
                 record.Description,
                 record.AmountDue,
                 record.DueDate,
-                record.IsPaid));
+                record.IsPaid,
+                record.DepartmentBillId));
         }
 
         [HttpPut("{id:int}")]
+        [Authorize(Roles = "Administrator,Treasurer,Officer")]
         public async Task<ActionResult<CollectibleDto>> Update(int id, CreateCollectibleRequest request)
         {
             var record = await _dbContext.Collectibles.Include(item => item.Student).FirstOrDefaultAsync(item => item.Id == id);
@@ -107,6 +113,7 @@ namespace DepartmentFinancialRecords.API.Controllers
             record.AmountDue = request.AmountDue;
             record.DueDate = request.DueDate ?? record.DueDate;
             record.IsPaid = request.IsPaid ?? record.IsPaid;
+            record.DepartmentBillId = request.DepartmentBillId ?? record.DepartmentBillId;
 
             await _dbContext.SaveChangesAsync();
 
@@ -117,10 +124,12 @@ namespace DepartmentFinancialRecords.API.Controllers
                 record.Description,
                 record.AmountDue,
                 record.DueDate,
-                record.IsPaid));
+                record.IsPaid,
+                record.DepartmentBillId));
         }
 
         [HttpDelete("{id:int}")]
+        [Authorize(Roles = "Administrator,Treasurer,Officer")]
         public async Task<IActionResult> Delete(int id)
         {
             var record = await _dbContext.Collectibles.FirstOrDefaultAsync(item => item.Id == id);
@@ -141,7 +150,8 @@ namespace DepartmentFinancialRecords.API.Controllers
         string Description,
         decimal AmountDue,
         DateTime? DueDate,
-        bool? IsPaid);
+        bool? IsPaid,
+        int? DepartmentBillId = null);
 
     public record CollectibleDto(
         int Id,
@@ -150,5 +160,6 @@ namespace DepartmentFinancialRecords.API.Controllers
         string Description,
         decimal AmountDue,
         DateTime DueDate,
-        bool IsPaid);
+        bool IsPaid,
+        int? DepartmentBillId);
 }

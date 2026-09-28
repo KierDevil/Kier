@@ -43,13 +43,21 @@ namespace DepartmentFinancialRecords.API.Controllers
                     item.EventDate,
                     item.Location,
                     item.Description,
-                    _dbContext.AttendanceRecords.Count(record => record.AttendanceEventId == item.Id)))
+                    _dbContext.AttendanceRecords.Count(record => record.AttendanceEventId == item.Id),
+                    item.SessionType,
+                    item.OpenAt,
+                    item.LateAt,
+                    item.CloseAt,
+                    item.AbsentFine,
+                    item.ClosedAt,
+                    item.AbsentProcessed))
                 .ToListAsync();
 
             return Ok(events);
         }
 
         [HttpPost("events")]
+        [Authorize(Roles = "Administrator,Treasurer,Officer")]
         public async Task<ActionResult<AttendanceEventDetailDto>> CreateEvent(CreateAttendanceEventRequest request)
         {
             var title = request.Title.Trim();
@@ -71,7 +79,12 @@ namespace DepartmentFinancialRecords.API.Controllers
                 Title = title,
                 EventDate = request.EventDate ?? DateTime.UtcNow,
                 Location = request.Location?.Trim() ?? string.Empty,
-                Description = request.Description?.Trim() ?? string.Empty
+                Description = request.Description?.Trim() ?? string.Empty,
+                SessionType = request.SessionType?.Trim() ?? "Log In",
+                OpenAt = request.OpenAt,
+                LateAt = request.LateAt,
+                CloseAt = request.CloseAt,
+                AbsentFine = request.AbsentFine ?? 0
             };
 
             _dbContext.AttendanceEvents.Add(newEvent);
@@ -84,7 +97,41 @@ namespace DepartmentFinancialRecords.API.Controllers
                 newEvent.Location,
                 newEvent.Description,
                 0,
+                newEvent.SessionType,
+                newEvent.OpenAt,
+                newEvent.LateAt,
+                newEvent.CloseAt,
+                newEvent.AbsentFine,
+                newEvent.ClosedAt,
+                newEvent.AbsentProcessed,
                 Array.Empty<AttendanceRecordDto>()));
+        }
+
+        [HttpPut("events/{id:int}")]
+        [Authorize(Roles = "Administrator,Treasurer,Officer")]
+        public async Task<ActionResult<AttendanceEventDetailDto>> UpdateEvent(int id, CreateAttendanceEventRequest request)
+        {
+            var eventItem = await _dbContext.AttendanceEvents.FirstOrDefaultAsync(item => item.Id == id);
+            if (eventItem is null) return NotFound(new { message = "Attendance event not found." });
+
+            eventItem.Title = request.Title.Trim();
+            eventItem.EventDate = request.EventDate ?? eventItem.EventDate;
+            eventItem.Location = request.Location?.Trim() ?? eventItem.Location;
+            eventItem.Description = request.Description?.Trim() ?? eventItem.Description;
+            eventItem.SessionType = request.SessionType?.Trim() ?? eventItem.SessionType;
+            eventItem.OpenAt = request.OpenAt ?? eventItem.OpenAt;
+            eventItem.LateAt = request.LateAt ?? eventItem.LateAt;
+            eventItem.CloseAt = request.CloseAt ?? eventItem.CloseAt;
+            eventItem.AbsentFine = request.AbsentFine ?? eventItem.AbsentFine;
+            await _dbContext.SaveChangesAsync();
+
+            var records = await _dbContext.AttendanceRecords
+                .Include(record => record.Student)
+                .Include(record => record.AttendanceEvent)
+                .Where(record => record.AttendanceEventId == id)
+                .OrderByDescending(record => record.RecordedAt)
+                .ToListAsync();
+            return Ok(ToEventDetail(eventItem, records));
         }
 
         [HttpGet("events/{id:int}")]
@@ -112,6 +159,13 @@ namespace DepartmentFinancialRecords.API.Controllers
                 eventItem.Location,
                 eventItem.Description,
                 records.Count,
+                eventItem.SessionType,
+                eventItem.OpenAt,
+                eventItem.LateAt,
+                eventItem.CloseAt,
+                eventItem.AbsentFine,
+                eventItem.ClosedAt,
+                eventItem.AbsentProcessed,
                 records.Select(record => AttendanceRecordDto.FromRecord(record)).ToArray()));
         }
 
@@ -132,6 +186,89 @@ namespace DepartmentFinancialRecords.API.Controllers
                 .ToListAsync();
 
             return Ok(records.Select(record => AttendanceRecordDto.FromRecord(record)));
+        }
+
+        [HttpPost("events/{id:int}/close")]
+        [Authorize(Roles = "Administrator,Treasurer,Officer")]
+        public async Task<ActionResult<CloseAttendanceEventResponse>> CloseEvent(int id)
+        {
+            var eventItem = await _dbContext.AttendanceEvents.FirstOrDefaultAsync(item => item.Id == id);
+            if (eventItem is null) return NotFound(new { message = "Attendance event not found." });
+            if (eventItem.AbsentProcessed)
+            {
+                return Conflict(new { message = "This attendance event has already been closed." });
+            }
+
+            await using var transaction = await _dbContext.Database.BeginTransactionAsync();
+            var students = await _dbContext.Students.Where(student => student.IsActive).ToListAsync();
+            var records = await _dbContext.AttendanceRecords
+                .Where(record => record.AttendanceEventId == id)
+                .ToListAsync();
+            var absentStudentIds = records
+                .Where(record => record.Status == AttendanceStatus.Absent)
+                .Select(record => record.StudentId)
+                .ToHashSet();
+            var recordedAt = DateTime.UtcNow;
+
+            foreach (var student in students.Where(student => !records.Any(record => record.StudentId == student.Id)))
+            {
+                absentStudentIds.Add(student.Id);
+                _dbContext.AttendanceRecords.Add(new AttendanceRecord
+                {
+                    StudentId = student.Id,
+                    AttendanceEventId = id,
+                    Status = AttendanceStatus.Absent,
+                    RecordedAt = recordedAt,
+                    Remarks = "Automatically marked absent when the event closed."
+                });
+            }
+
+            var absentStudents = students.Where(student => absentStudentIds.Contains(student.Id)).ToList();
+            var emailFines = new List<Fine>();
+            if (eventItem.AbsentFine > 0)
+            {
+                var category = $"Absent - {eventItem.Title} ({eventItem.SessionType})";
+                var existingFineStudentIds = await _dbContext.Fines
+                    .Where(fine => fine.Category == category && students.Select(student => student.Id).Contains(fine.StudentId))
+                    .Select(fine => fine.StudentId)
+                    .ToListAsync();
+                var existingFineSet = existingFineStudentIds.ToHashSet();
+                foreach (var student in absentStudents.Where(student => !existingFineSet.Contains(student.Id)))
+                {
+                    var fine = new Fine
+                    {
+                        StudentId = student.Id,
+                        Category = category,
+                        Amount = eventItem.AbsentFine,
+                        DateIssued = recordedAt,
+                        IsPaid = false,
+                        Remarks = "Automatically assessed when the event closed."
+                    };
+                    _dbContext.Fines.Add(fine);
+                    emailFines.Add(fine);
+                }
+            }
+
+            eventItem.ClosedAt = recordedAt;
+            eventItem.AbsentProcessed = true;
+            await _dbContext.SaveChangesAsync();
+            await transaction.CommitAsync();
+
+            return Ok(new CloseAttendanceEventResponse(
+                absentStudents.Count,
+                emailFines.Count,
+                emailFines.Select(fine => new AttendanceFineNoticeDto(fine.Id, fine.StudentId, fine.Category, fine.Amount, fine.IsPaid)).ToArray()));
+        }
+
+        [HttpDelete("{id:int}")]
+        [Authorize(Roles = "Administrator,Treasurer,Officer")]
+        public async Task<IActionResult> Delete(int id)
+        {
+            var record = await _dbContext.AttendanceRecords.FirstOrDefaultAsync(item => item.Id == id);
+            if (record is null) return NotFound(new { message = "Attendance record was not found." });
+            _dbContext.AttendanceRecords.Remove(record);
+            await _dbContext.SaveChangesAsync();
+            return NoContent();
         }
 
         [HttpPost("scan")]
@@ -165,7 +302,12 @@ namespace DepartmentFinancialRecords.API.Controllers
                     Title = title,
                     EventDate = request.OpenAt?.ToUniversalTime() ?? DateTime.UtcNow,
                     Location = request.Location?.Trim() ?? string.Empty,
-                    Description = "Created from QR/RFID attendance scan."
+                    Description = "Created from QR/RFID attendance scan.",
+                    SessionType = request.SessionType?.Trim() ?? "Log In",
+                    OpenAt = request.OpenAt,
+                    LateAt = request.LateAt,
+                    CloseAt = request.CloseAt,
+                    AbsentFine = request.AbsentFine ?? 0
                 };
                 _dbContext.AttendanceEvents.Add(attendanceEvent);
                 await _dbContext.SaveChangesAsync();
@@ -239,6 +381,25 @@ namespace DepartmentFinancialRecords.API.Controllers
             return Ok(AttendanceRecordDto.FromRecord(record, minutesLate, lateFineAmount));
         }
 
+        private static AttendanceEventDetailDto ToEventDetail(AttendanceEvent eventItem, List<AttendanceRecord> records)
+        {
+            return new AttendanceEventDetailDto(
+                eventItem.Id,
+                eventItem.Title,
+                eventItem.EventDate,
+                eventItem.Location,
+                eventItem.Description,
+                records.Count,
+                eventItem.SessionType,
+                eventItem.OpenAt,
+                eventItem.LateAt,
+                eventItem.CloseAt,
+                eventItem.AbsentFine,
+                eventItem.ClosedAt,
+                eventItem.AbsentProcessed,
+                records.Select(record => AttendanceRecordDto.FromRecord(record)).ToArray());
+        }
+
         private async Task UpsertLateFine(int studentId, string eventTitle, decimal amount, int minutesLate)
         {
             var category = $"Late Attendance - {eventTitle}";
@@ -300,7 +461,12 @@ namespace DepartmentFinancialRecords.API.Controllers
         string Title,
         DateTime? EventDate,
         string? Location,
-        string? Description);
+        string? Description,
+        string? SessionType = null,
+        DateTime? OpenAt = null,
+        DateTime? LateAt = null,
+        DateTime? CloseAt = null,
+        decimal? AbsentFine = null);
 
     public record AttendanceEventDto(
         int Id,
@@ -308,7 +474,14 @@ namespace DepartmentFinancialRecords.API.Controllers
         DateTime EventDate,
         string Location,
         string Description,
-        int TotalRecords);
+        int TotalRecords,
+        string SessionType,
+        DateTime? OpenAt,
+        DateTime? LateAt,
+        DateTime? CloseAt,
+        decimal AbsentFine,
+        DateTime? ClosedAt,
+        bool AbsentProcessed);
 
     public record AttendanceEventDetailDto(
         int Id,
@@ -317,7 +490,17 @@ namespace DepartmentFinancialRecords.API.Controllers
         string Location,
         string Description,
         int TotalRecords,
+        string SessionType,
+        DateTime? OpenAt,
+        DateTime? LateAt,
+        DateTime? CloseAt,
+        decimal AbsentFine,
+        DateTime? ClosedAt,
+        bool AbsentProcessed,
         AttendanceRecordDto[] Records);
+
+    public record CloseAttendanceEventResponse(int AbsentCount, int FineCount, AttendanceFineNoticeDto[] EmailFines);
+    public record AttendanceFineNoticeDto(int Id, int StudentId, string Category, decimal Amount, bool IsPaid);
 
     public record ScanAttendanceRequest(
         string? StudentNo,
@@ -330,7 +513,9 @@ namespace DepartmentFinancialRecords.API.Controllers
         decimal? FinePerLateMinute,
         decimal? MaxLateFine,
         string? Location,
-        string? Remarks);
+        string? Remarks,
+        string? SessionType = null,
+        decimal? AbsentFine = null);
 
     public record AttendanceRecordDto(
         int Id,

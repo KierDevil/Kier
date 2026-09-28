@@ -27,24 +27,36 @@ Track 1: Microsoft Enterprise Stack
 cd C:\appdev
 git clone https://github.com/KierDevil/Kier.git
 cd Kier
-git checkout agent/interactive-qr-rfid-attendance
 ```
 
 Install these on the PC:
 - .NET SDK 8
 - Node.js and npm
-- MySQL Server
+- MySQL Server 8
 
 Keep local passwords out of `appsettings.json`. Configure each PC's connection string and iCloud app-specific password in .NET User Secrets instead. From the project root, run:
 
 ```powershell
 $env:APPDATA = "$PWD\.dotnet-home\AppData\Roaming"
 $project = ".\backend\DepartmentFinancialRecords.API\DepartmentFinancialRecords.API.csproj"
-dotnet user-secrets set --project $project "ConnectionStrings:DefaultConnection" "<your-local-MySQL-connection-string>"
-dotnet user-secrets set --project $project "Email:ICloud:SmtpPassword" "<your-iCloud-app-specific-password>"
+dotnet user-secrets set --project $project "ConnectionStrings:DefaultConnection" "server=localhost;port=3306;database=departmentfinancialrecords;user=kier_app;password=CHANGE_THIS_PASSWORD;SslMode=None;AllowPublicKeyRetrieval=True;"
+dotnet user-secrets set --project $project "Jwt:Key" "<random-secret-at-least-32-characters>"
+dotnet user-secrets set --project $project "BootstrapAdmin:Username" "<your-admin-username>"
+dotnet user-secrets set --project $project "BootstrapAdmin:Password" "<your-strong-admin-password>"
+# Optional: seed one student login on the first database startup.
+dotnet user-secrets set --project $project "UserSeed:Username" "<student-username>"
+dotnet user-secrets set --project $project "UserSeed:Password" "<strong-student-password>"
 ```
 
-Use your own database credentials and iCloud app-specific password. The `.dotnet-home` folder is local to each PC and is not pushed to GitHub.
+Create the database and a local MySQL user with permission to use it before starting the API. For example, connect to MySQL as an administrator with `mysql -u root -p`, then run:
+
+```sql
+CREATE DATABASE departmentfinancialrecords CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
+CREATE USER 'kier_app'@'localhost' IDENTIFIED BY 'CHANGE_THIS_PASSWORD';
+GRANT ALL PRIVILEGES ON departmentfinancialrecords.* TO 'kier_app'@'localhost';
+```
+
+Use the same new database password in User Secrets, along with your own random JWT key and administrator credentials. The first administrator is created on first database startup when no users exist. User Secrets are stored locally under the ignored `.dotnet-home` folder and are not pushed to GitHub. Configure `Email:ICloud:SmtpUsername`, `Email:ICloud:SmtpPassword`, and `Email:ICloud:FromAddress` separately if you use email receipts.
 
 ## How to Run
 Run these in separate terminals.
@@ -52,7 +64,15 @@ Run these in separate terminals.
 ### Database
 Use MySQL. Create a database named `departmentfinancialrecords`, then configure its connection string in User Secrets as shown above.
 
-If using the local portable MySQL setup from this workspace, run:
+On a fresh database, the API creates the current schema at startup. For an existing database created from an older schema, back it up first, then run `backend/DepartmentFinancialRecords.API/Database/legacy-schema-compatibility.sql` if needed, followed by `backend/DepartmentFinancialRecords.API/Database/real-data-database-upgrade.sql` exactly once.
+
+Student import files containing personal information belong outside Git. If you use the ignored `private-data/students-import.sql` file, transfer it to each computer using a private channel and import it only after the database schema is ready. From PowerShell, pipe it into your configured MySQL client; `-p` prompts for the database password without putting it in shell history:
+
+```powershell
+Get-Content .\private-data\students-import.sql | mysql --host=DB_HOST --port=DB_PORT --user=DB_USER -p departmentfinancialrecords
+```
+
+If using the optional portable MySQL setup, place the MySQL 8.4.10 Windows distribution in the ignored `mysql-8.4.10-winx64` folder, initialize its data directory once, then run:
 
 ```powershell
 mysql-8.4.10-winx64\bin\mysqld.exe --defaults-file=mysql-local.ini
@@ -77,14 +97,14 @@ Swagger will be available from the backend URL in development. The health check 
 2. Run the frontend from the `frontend` folder:
 
 ```powershell
-npm install
+npm ci
 npm run dev -- --host 0.0.0.0 --port 5173
 ```
 
 If you use pnpm instead:
 
 ```powershell
-pnpm install
+pnpm install --frozen-lockfile
 pnpm run dev -- --host 0.0.0.0 --port 5173
 ```
 
@@ -95,7 +115,7 @@ From the project root, run:
 .\start.cmd
 ```
 
-This script will open separate terminals for the backend and frontend. The backend runs at `http://localhost:5000`, and the frontend runs at `http://localhost:5173` by default.
+Make sure MySQL is running and User Secrets are configured first. This script will open separate terminals for the backend and frontend without stopping or starting the database service. The backend runs at `http://localhost:5000`, and the frontend runs at `http://localhost:5173` by default.
 
 ## QR and RFID Attendance
 - QR payload format: `SBC IT DEP:<student-id>`
@@ -197,6 +217,6 @@ Then rebuild/redeploy the frontend.
 
 ## Notes
 - The backend project uses JWT-based authentication and Swagger for API documentation.
-- The frontend now includes a starter dashboard and checks `/api/health` through the Vite proxy.
-- Students and attendance have backend APIs. Collections, fines, expenses, and reports still need full backend API wiring.
-- Do not commit real database passwords. Keep local passwords in your own `appsettings.json`.
+- The frontend authenticates through the API and loads business records from the database.
+- Each PC needs MySQL installed/configured, a JWT key, and a bootstrap administrator configured in local User Secrets.
+- Never commit database, SMTP, JWT, administrator, or student personal data to the public repository.

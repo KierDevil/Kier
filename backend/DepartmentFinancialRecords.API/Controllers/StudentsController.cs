@@ -33,15 +33,30 @@ namespace DepartmentFinancialRecords.API.Controllers
         }
 
         [HttpPost]
+        [Authorize(Roles = "Administrator,Treasurer,Officer")]
         public async Task<ActionResult<StudentDto>> Create(CreateStudentRequest request)
         {
+            var course = request.CourseId.HasValue
+                ? await _dbContext.Courses.FirstOrDefaultAsync(item => item.Id == request.CourseId.Value)
+                : null;
+            var yearLevel = request.YearLevelId.HasValue
+                ? await _dbContext.YearLevels.FirstOrDefaultAsync(item => item.Id == request.YearLevelId.Value)
+                : null;
+            if (request.CourseId.HasValue && course is null) return BadRequest(new { message = "Course option was not found." });
+            if (request.YearLevelId.HasValue && yearLevel is null) return BadRequest(new { message = "Year level option was not found." });
+
+            await using var transaction = await _dbContext.Database.BeginTransactionAsync();
             var student = new Student
             {
                 StudentId = request.StudentNo.Trim(),
                 FirstName = request.FirstName.Trim(),
                 LastName = request.LastName.Trim(),
-                Course = request.Course.Trim(),
-                YearLevel = request.YearLevel.Trim(),
+                CourseId = course?.Id,
+                CourseOption = course,
+                Course = course?.Name ?? request.Course?.Trim() ?? string.Empty,
+                YearLevelId = yearLevel?.Id,
+                YearLevelOption = yearLevel,
+                YearLevel = yearLevel?.Name ?? request.YearLevel?.Trim() ?? string.Empty,
                 ContactNumber = request.ContactNumber.Trim(),
                 Email = request.Email?.Trim() ?? string.Empty,
                 RfidUid = RfidUtility.Normalize(request.RfidUid),
@@ -51,10 +66,24 @@ namespace DepartmentFinancialRecords.API.Controllers
             _dbContext.Students.Add(student);
             await _dbContext.SaveChangesAsync();
 
+            var activeBills = await _dbContext.DepartmentBills.Where(bill => bill.IsActive).ToListAsync();
+            _dbContext.Collectibles.AddRange(activeBills.Select(bill => new Collectible
+            {
+                StudentId = student.Id,
+                DepartmentBillId = bill.Id,
+                Description = bill.Category,
+                AmountDue = bill.Amount,
+                DueDate = DateTime.UtcNow,
+                IsPaid = false
+            }));
+            await _dbContext.SaveChangesAsync();
+            await transaction.CommitAsync();
+
             return CreatedAtAction(nameof(Get), new { id = student.Id }, StudentDto.FromStudent(student));
         }
 
         [HttpPut("{id:int}")]
+        [Authorize(Roles = "Administrator,Treasurer,Officer")]
         public async Task<ActionResult<StudentDto>> Update(int id, CreateStudentRequest request)
         {
             var student = await _dbContext.Students.FirstOrDefaultAsync(item => item.Id == id && item.IsActive);
@@ -63,11 +92,24 @@ namespace DepartmentFinancialRecords.API.Controllers
                 return NotFound(new { message = "Student was not found." });
             }
 
+            var course = request.CourseId.HasValue
+                ? await _dbContext.Courses.FirstOrDefaultAsync(item => item.Id == request.CourseId.Value)
+                : null;
+            var yearLevel = request.YearLevelId.HasValue
+                ? await _dbContext.YearLevels.FirstOrDefaultAsync(item => item.Id == request.YearLevelId.Value)
+                : null;
+            if (request.CourseId.HasValue && course is null) return BadRequest(new { message = "Course option was not found." });
+            if (request.YearLevelId.HasValue && yearLevel is null) return BadRequest(new { message = "Year level option was not found." });
+
             student.StudentId = request.StudentNo.Trim();
             student.FirstName = request.FirstName.Trim();
             student.LastName = request.LastName.Trim();
-            student.Course = request.Course.Trim();
-            student.YearLevel = request.YearLevel.Trim();
+            student.CourseId = course?.Id;
+            student.CourseOption = course;
+            student.Course = course?.Name ?? request.Course?.Trim() ?? string.Empty;
+            student.YearLevelId = yearLevel?.Id;
+            student.YearLevelOption = yearLevel;
+            student.YearLevel = yearLevel?.Name ?? request.YearLevel?.Trim() ?? string.Empty;
             student.ContactNumber = request.ContactNumber.Trim();
             student.Email = request.Email?.Trim() ?? string.Empty;
             student.RfidUid = RfidUtility.Normalize(request.RfidUid);
@@ -75,6 +117,21 @@ namespace DepartmentFinancialRecords.API.Controllers
             await _dbContext.SaveChangesAsync();
 
             return Ok(StudentDto.FromStudent(student));
+        }
+
+        [HttpDelete("{id:int}")]
+        [Authorize(Roles = "Administrator,Treasurer,Officer")]
+        public async Task<IActionResult> Delete(int id)
+        {
+            var student = await _dbContext.Students.FirstOrDefaultAsync(item => item.Id == id && item.IsActive);
+            if (student is null)
+            {
+                return NotFound(new { message = "Student was not found." });
+            }
+
+            student.IsActive = false;
+            await _dbContext.SaveChangesAsync();
+            return NoContent();
         }
 
         [HttpGet("{id:int}/account-summary")]
@@ -133,11 +190,13 @@ namespace DepartmentFinancialRecords.API.Controllers
         string StudentNo,
         string FirstName,
         string LastName,
-        string Course,
-        string YearLevel,
+        string? Course,
+        string? YearLevel,
         string ContactNumber,
         string? Email,
-        string? RfidUid);
+        string? RfidUid,
+        int? CourseId = null,
+        int? YearLevelId = null);
 
     public record StudentDto(
         int Id,
@@ -147,6 +206,8 @@ namespace DepartmentFinancialRecords.API.Controllers
         string Name,
         string Course,
         string YearLevel,
+        int? CourseId,
+        int? YearLevelId,
         string ContactNumber,
         string Email,
         string RfidUid)
@@ -163,6 +224,8 @@ namespace DepartmentFinancialRecords.API.Controllers
                 name,
                 student.Course,
                 student.YearLevel,
+                student.CourseId,
+                student.YearLevelId,
                 student.ContactNumber,
                 student.Email,
                 student.RfidUid);

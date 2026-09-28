@@ -19,6 +19,7 @@ namespace DepartmentFinancialRecords.API.Controllers
         }
 
         [HttpGet]
+        [Authorize(Roles = "Administrator,Treasurer,Officer")]
         public async Task<ActionResult<IEnumerable<DisbursementDto>>> Get()
         {
             var records = await _dbContext.Disbursements
@@ -37,6 +38,7 @@ namespace DepartmentFinancialRecords.API.Controllers
         }
 
         [HttpGet("{id:int}")]
+        [Authorize(Roles = "Administrator,Treasurer,Officer")]
         public async Task<ActionResult<DisbursementDto>> GetById(int id)
         {
             var record = await _dbContext.Disbursements.FirstOrDefaultAsync(item => item.Id == id);
@@ -56,6 +58,7 @@ namespace DepartmentFinancialRecords.API.Controllers
         }
 
         [HttpPost]
+        [Authorize(Roles = "Administrator,Treasurer,Officer")]
         public async Task<ActionResult<DisbursementDto>> Create(CreateDisbursementRequest request)
         {
             var record = new Disbursement
@@ -82,6 +85,7 @@ namespace DepartmentFinancialRecords.API.Controllers
         }
 
         [HttpPut("{id:int}")]
+        [Authorize(Roles = "Administrator,Treasurer,Officer")]
         public async Task<ActionResult<DisbursementDto>> Update(int id, CreateDisbursementRequest request)
         {
             var record = await _dbContext.Disbursements.FirstOrDefaultAsync(item => item.Id == id);
@@ -110,6 +114,7 @@ namespace DepartmentFinancialRecords.API.Controllers
         }
 
         [HttpDelete("{id:int}")]
+        [Authorize(Roles = "Administrator,Treasurer,Officer")]
         public async Task<IActionResult> Delete(int id)
         {
             var record = await _dbContext.Disbursements.FirstOrDefaultAsync(item => item.Id == id);

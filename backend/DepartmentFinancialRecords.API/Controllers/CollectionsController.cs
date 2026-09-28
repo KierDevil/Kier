@@ -106,6 +106,7 @@ namespace DepartmentFinancialRecords.API.Controllers
         }
 
         [HttpPut("{id:int}")]
+        [Authorize(Roles = "Administrator,Treasurer,Officer")]
         public async Task<ActionResult<CollectionDto>> Update(int id, CreateCollectionRequest request)
         {
             var collection = await _dbContext.Collections.Include(item => item.Student).FirstOrDefaultAsync(item => item.Id == id);
@@ -163,6 +164,7 @@ namespace DepartmentFinancialRecords.API.Controllers
         }
 
         [HttpDelete("{id:int}")]
+        [Authorize(Roles = "Administrator,Treasurer,Officer")]
         public async Task<IActionResult> Delete(int id)
         {
             var collection = await _dbContext.Collections.FirstOrDefaultAsync(item => item.Id == id);

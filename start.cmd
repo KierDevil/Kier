@@ -10,14 +10,11 @@ set "CODEX_NODE=%USERPROFILE%\.cache\codex-runtimes\codex-primary-runtime\depend
 set "CODEX_PNPM=%USERPROFILE%\.cache\codex-runtimes\codex-primary-runtime\dependencies\bin\fallback\pnpm.cmd"
 set "LOCAL_DOTNET=%~dp0.dotnet\dotnet.exe"
 if not exist "%LOCAL_DOTNET%" set "LOCAL_DOTNET=%~dp0..\.dotnet\dotnet.exe"
-set "LOCAL_MYSQL=%~dp0mysql-8.4.10-winx64\bin\mysqld.exe"
-set "LOCAL_MYSQL_CONFIG=%~dp0mysql-local.ini"
-set "LOCAL_MYSQL_START=%~dp0run-mysql.cmd"
 set "LOCAL_BACKEND_START=%~dp0run-backend.cmd"
 set "LOCAL_FRONTEND_START=%~dp0run-frontend.cmd"
 
-rem Kill duplicate app instances to keep one local setup only.
-for %%P in (5000 5173 5174 3308) do (
+rem Restart the app services without stopping the user's database service.
+for %%P in (5000 5173 5174) do (
     for /f "skip=5 tokens=5" %%A in ('netstat -ano ^| findstr ":%%P " 2^>nul') do (
         taskkill /f /pid %%A >nul 2>&1
     )
@@ -25,20 +22,7 @@ for %%P in (5000 5173 5174 3308) do (
 
 echo.
 
-rem Database
-if exist "%LOCAL_MYSQL%" (
-    netstat -ano | find ":3308" >nul
-    if errorlevel 1 (
-        echo Starting local MySQL on port 3308...
-        start "Kier MySQL" "%LOCAL_MYSQL_START%"
-        timeout /t 5 /nobreak >nul
-    ) else (
-        echo MySQL already appears to be running.
-    )
-) else (
-    echo WARNING: local MySQL was not found. Start MySQL manually before the backend.
-)
-
+echo Ensure MySQL is running and the backend User Secrets are configured before starting.
 echo.
 
 rem Backend

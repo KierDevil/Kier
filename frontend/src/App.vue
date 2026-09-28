@@ -1,11 +1,23 @@
 <template>
-  <div class="workspace">
+  <div v-if="!isLoggedIn && !loginOpen" class="welcome-shell">
+    <div class="welcome-card">
+      <div class="welcome-badge">Kier Records</div>
+      <h1>Welcome to the school records system</h1>
+      <p>Sign in with your database account to continue.</p>
+
+      <div class="welcome-actions">
+        <button type="button" class="primary-action" @click="openLogin()">Sign In</button>
+      </div>
+    </div>
+  </div>
+
+  <div v-else class="workspace">
     <aside class="sidebar">
       <div class="brand">
         <span class="brand-mark">K</span>
         <div>
           <strong>Kier Records</strong>
-          <small>Financial records system</small>
+          <small>Student and finance system</small>
         </div>
       </div>
 
@@ -45,7 +57,10 @@
         </div>
 
         <div class="topbar-actions">
-          <span v-if="isLoggedIn" class="user-badge">{{ authUser.username }} · {{ authUser.role }}</span>
+          <span v-if="isLoggedIn" class="user-badge">
+            <span>{{ authUser.username }}</span>
+            <span class="user-role">{{ authUser.role }}</span>
+          </span>
           <button type="button" class="login-toggle" @click="isLoggedIn ? logout() : openLogin()">
             {{ isLoggedIn ? 'Logout' : 'Login' }}
           </button>
@@ -59,8 +74,8 @@
           <div class="auth-header">
             <div>
               <span class="auth-label">Secure access</span>
-              <h2>Department sign in</h2>
-              <p>Enter your username and password to continue.</p>
+              <h2>{{ authMode === 'register' ? 'Create a student account' : 'Sign in' }}</h2>
+              <p>{{ authMode === 'register' ? 'New accounts receive student access.' : 'Use your database account credentials.' }}</p>
             </div>
             <button type="button" class="text-action" @click="loginOpen = false">Close</button>
           </div>
@@ -72,11 +87,13 @@
 
           <div class="auth-field">
             <label for="login-password">Password</label>
-            <input id="login-password" v-model="loginForm.password" type="password" required placeholder="Your password" />
+            <input id="login-password" v-model="loginForm.password" type="password" required :minlength="authMode === 'register' ? 6 : undefined" placeholder="Your password" />
           </div>
 
-          <button type="submit" class="primary-action">Sign in</button>
-          <small class="auth-hint">Default account: admin / Admin123!</small>
+          <button type="submit" class="primary-action">{{ authMode === 'register' ? 'Create Account' : 'Sign In' }}</button>
+          <button type="button" class="text-action" @click="authMode = authMode === 'register' ? 'login' : 'register'; loginForm.password = ''">
+            {{ authMode === 'register' ? 'Back to sign in' : 'Create student account' }}
+          </button>
         </form>
       </div>
 
@@ -188,8 +205,8 @@
         <p v-else class="empty-state">No student records found.</p>
       </section>
 
-      <section v-else-if="activeView === 'students'" class="data-layout">
-        <form class="panel form-panel" @submit.prevent="saveStudent">
+      <section v-else-if="activeView === 'students'" class="data-layout students-layout">
+        <form v-if="isAdmin" class="panel form-panel" @submit.prevent="saveStudent">
           <div class="form-title">
             <h2>{{ editingStudentId ? 'Edit Student' : 'Add Student' }}</h2>
             <button v-if="editingStudentId" type="button" class="text-action" @click="resetStudentForm">Cancel</button>
@@ -212,11 +229,17 @@
           </label>
           <label>
             Course
-            <input v-model="studentForm.course" type="text" required />
+            <select v-model.number="studentForm.courseId" required>
+              <option :value="null" disabled>Select a course</option>
+              <option v-for="course in courseOptions" :key="course.id" :value="course.id">{{ course.name }}</option>
+            </select>
           </label>
           <label>
             Year
-            <input v-model="studentForm.yearLevel" type="text" required />
+            <select v-model.number="studentForm.yearLevelId" required>
+              <option :value="null" disabled>Select a year</option>
+              <option v-for="year in yearLevelOptions" :key="year.id" :value="year.id">{{ year.name }}</option>
+            </select>
           </label>
           <label>
             Contact
@@ -233,7 +256,59 @@
           <button type="submit" class="primary-action">{{ editingStudentId ? 'Update Student' : 'Save Student' }}</button>
         </form>
 
-        <section class="panel">
+        <section v-if="isAdmin" class="panel academic-options-panel">
+          <div class="panel-heading">
+            <div>
+              <h2>Course and Year Options</h2>
+              <span>Manage the options used when enrolling students</span>
+            </div>
+          </div>
+          <div class="academic-options-grid">
+            <form class="academic-option-form" @submit.prevent="saveCourseOption">
+              <h3>Courses</h3>
+              <label>
+                Course name
+                <input v-model="courseOptionName" type="text" required placeholder="e.g. BSCS" />
+              </label>
+              <div class="button-row">
+                <button type="submit" class="primary-action">{{ editingCourseId ? 'Save Course' : 'Add Course' }}</button>
+                <button v-if="editingCourseId" type="button" class="text-action" @click="cancelCourseEdit">Cancel</button>
+              </div>
+              <ul class="academic-option-list">
+                <li v-for="course in courseOptions" :key="course.id">
+                  <span>{{ course.name }}</span>
+                  <div class="table-actions">
+                    <button type="button" @click="editCourseOption(course)">Edit</button>
+                    <button type="button" @click="removeCourseOption(course.id)">Delete</button>
+                  </div>
+                </li>
+              </ul>
+            </form>
+
+            <form class="academic-option-form" @submit.prevent="saveYearLevelOption">
+              <h3>Year Levels</h3>
+              <label>
+                Year name
+                <input v-model="yearLevelOptionName" type="text" required placeholder="e.g. 1st Year" />
+              </label>
+              <div class="button-row">
+                <button type="submit" class="primary-action">{{ editingYearLevelId ? 'Save Year' : 'Add Year' }}</button>
+                <button v-if="editingYearLevelId" type="button" class="text-action" @click="cancelYearLevelEdit">Cancel</button>
+              </div>
+              <ul class="academic-option-list">
+                <li v-for="year in yearLevelOptions" :key="year.id">
+                  <span>{{ year.name }}</span>
+                  <div class="table-actions">
+                    <button type="button" @click="editYearLevelOption(year)">Edit</button>
+                    <button type="button" @click="removeYearLevelOption(year.id)">Delete</button>
+                  </div>
+                </li>
+              </ul>
+            </form>
+          </div>
+        </section>
+
+        <section class="panel student-directory-panel">
           <div class="panel-heading">
             <div>
               <h2>Student Directory</h2>
@@ -267,6 +342,12 @@
           </div>
           <div class="student-directory-wrap">
           <table class="student-directory-table">
+            <colgroup>
+              <col style="width: 36%;" />
+              <col style="width: 28%;" />
+              <col style="width: 16%;" />
+              <col style="width: 20%;" />
+            </colgroup>
             <thead>
               <tr>
                 <th>Student</th>
@@ -293,8 +374,8 @@
                   </td>
                   <td class="table-actions">
                     <button type="button" @click="selectStudent(student.id)">View QR</button>
-                    <button type="button" @click="editStudent(student)">Edit</button>
-                    <button type="button" @click="removeStudent(student.id)">Delete</button>
+                    <button v-if="isAdmin" type="button" @click="editStudent(student)">Edit</button>
+                    <button v-if="isAdmin" type="button" @click="removeStudent(student.id)">Delete</button>
                   </td>
                 </tr>
               </template>
@@ -337,14 +418,16 @@
       <section v-else-if="activeView === 'collections'" class="collections-page">
         <div class="collections-forms">
           <form class="panel form-panel" @submit.prevent="addCollection">
-            <h2>Add New Collection</h2>
+            <h2>{{ editingCollectionId ? 'Edit Ledger Entry' : 'Record Payment' }}</h2>
+            <p class="field-note">This form records payments received. Create unpaid bills in Admin Center.</p>
             <label>
               Student
               <div class="autocomplete">
                 <input v-model="collectionStudentName" type="text" placeholder="Type student name" required @input="handleCollectionStudentNameInput" />
                 <ul v-if="collectionNameSuggestions.length" class="autocomplete-list">
-                  <li v-for="suggestion in collectionNameSuggestions" :key="suggestion" @mousedown.prevent="selectCollectionStudentName(suggestion)">
-                    {{ suggestion }}
+                  <li v-for="suggestion in collectionNameSuggestions" :key="suggestion.id" @mousedown.prevent="selectCollectionStudentName(suggestion)">
+                    <strong>{{ suggestion.name }}</strong>
+                    <small>{{ suggestion.studentNo }} · {{ suggestion.course }} {{ suggestion.yearLevel }}</small>
                   </li>
                 </ul>
               </div>
@@ -355,13 +438,6 @@
               <datalist id="collection-categories">
                 <option v-for="category in collectionCategories" :key="category" :value="category"></option>
               </datalist>
-            </label>
-            <label>
-              Status
-              <select v-model="collectionForm.status">
-                <option>Paid</option>
-                <option>Unpaid</option>
-              </select>
             </label>
             <label>
               Amount
@@ -376,7 +452,7 @@
               <input v-model="receiptEmail" type="email" placeholder="Enter recipient email to send receipt" />
               <small class="field-note">Email receipt is only sent if you enter an email address.</small>
             </label>
-            <button type="submit" class="primary-action">{{ editingCollectionId ? 'Update Payment' : 'Save Payment' }}</button>
+            <button type="submit" class="primary-action">{{ editingCollectionId ? 'Save Changes' : 'Record Payment' }}</button>
           </form>
 
         </div>
@@ -407,18 +483,18 @@
               </div>
               <div class="ledger-actions">
                 <div class="ledger-amount">{{ money(collection.amount) }}</div>
-                <button type="button" @click="editCollection(collection)">Edit</button>
-                <button type="button" @click="toggleCollectionStatus(collection.id)">
+                <button v-if="isAdmin" type="button" @click="editCollection(collection)">Edit</button>
+                <button v-if="isAdmin && collection.backendType === 'collectible'" type="button" @click="toggleCollectionStatus(collection.id)">
                   {{ collection.status === 'Paid' ? 'Mark Unpaid' : 'Mark Paid' }}
                 </button>
-                <button type="button" @click="removeCollection(collection.id)">Delete</button>
+                <button v-if="isAdmin" type="button" @click="removeCollection(collection.id)">Delete</button>
               </div>
             </article>
           </div>
         </section>
       </section>
 
-      <section v-else-if="activeView === 'admin'" class="view-stack">
+      <section v-else-if="activeView === 'admin' && isAdmin" class="view-stack">
         <div class="stat-grid">
           <article class="stat-card">
             <span>Total Owed</span>
@@ -475,27 +551,41 @@
           <section class="panel admin-quick-actions">
             <div class="panel-heading">
               <div>
-                <h2>Admin Quick Actions</h2>
+                <h2>Admin Center Quick Actions</h2>
                 <span>Create or edit common financial items quickly</span>
               </div>
             </div>
 
             <div class="admin-grid">
               <form class="admin-card" @submit.prevent="addCollectionForAllStudents">
-                <h3>Add Bill / Event Contribution</h3>
-                <p>Creates one entry for every student.</p>
+                <h3>Add Department-wide Bill</h3>
+                <p>Applies to all current students and any students added later.</p>
                 <label>
                   Category
-                  <input list="collection-categories" v-model="collectionForm.category" type="text" placeholder="e.g. Event Contribution, Department Fee" />
+                  <input list="collection-categories" v-model="collectionForm.category" type="text" placeholder="e.g. Department Fund" required />
                 </label>
                 <label>
                   Amount
-                  <input v-model.number="collectionForm.amount" type="number" min="0" step="1" />
+                  <input v-model.number="collectionForm.amount" type="number" min="1" step="1" required />
                 </label>
                 <div class="button-row">
-                  <button type="submit" class="primary-action">Create for All</button>
+                  <button type="submit" class="primary-action">{{ students.length ? `Save for ${students.length} Current Students` : 'Save for Future Students' }}</button>
                 </div>
               </form>
+
+              <section class="admin-card">
+                <h3>Active Department Bills</h3>
+                <p v-if="!departmentBills.length">No department-wide bills set up.</p>
+                <ul v-else class="activity-list">
+                  <li v-for="bill in departmentBills" :key="bill.id">
+                    <span>{{ money(bill.amount) }}</span>
+                    <div>
+                      <strong>{{ bill.category }}</strong>
+                      <small>{{ collections.filter((item) => item.departmentBillId === bill.id).length }} student bill(s) assigned</small>
+                    </div>
+                  </li>
+                </ul>
+              </section>
 
               <form class="admin-card" @submit.prevent="addDisbursement">
                 <h3>Add Department Fund / Expense</h3>
@@ -516,19 +606,12 @@
                 </div>
               </form>
 
-              <section class="admin-card reset-card">
-                <h3>Reset all app data</h3>
-                <p>Clear all students, collections, fines, attendance, emails, and activity, then start fresh.</p>
-                <div class="button-row">
-                  <button type="button" class="secondary-action" @click="confirmResetState">Reset Everything</button>
-                </div>
-              </section>
             </div>
           </section>
       </section>
 
-      <section v-else-if="activeView === 'fines'" class="data-layout">
-        <form class="panel form-panel" @submit.prevent="addFine">
+      <section v-else-if="activeView === 'fines'" class="data-layout" :class="{ 'single-column-layout': !isAdmin }">
+        <form v-if="isAdmin" class="panel form-panel" @submit.prevent="addFine">
           <h2>{{ editingFineId ? 'Edit Fine' : 'Add Fine' }}</h2>
           <label>
             Student
@@ -566,7 +649,10 @@
               <span>Click a student name to view absent events and fines</span>
             </div>
           </div>
-          <div class="absent-fines-browser">
+          <p v-if="!filteredStudents.length" class="empty-state absent-fines-empty">
+            No students are available to show absent fines.
+          </p>
+          <div v-else class="absent-fines-browser">
             <div class="student-name-list">
               <button
                 v-for="student in filteredStudents"
@@ -578,7 +664,6 @@
                 <span>{{ student.name }}</span>
                 <strong>{{ absentFineCountFor(student.id) }}</strong>
               </button>
-              <p v-if="!filteredStudents.length">No students found</p>
             </div>
             <div class="absent-fines-detail">
               <template v-if="selectedAbsentFineStudent">
@@ -631,19 +716,21 @@
         <section class="panel event-creator-panel">
           <div class="panel-heading">
             <div>
-              <h2>Event</h2>
-              <span>Enter the event name to start attendance.</span>
+              <h2>Event Setup</h2>
+              <span>Choose an existing event or create a new one.</span>
             </div>
+            <span class="event-state" :class="{ active: Boolean(currentAttendanceEventId) }">
+              {{ currentAttendanceEventId ? 'Event Open' : 'No Event Open' }}
+            </span>
           </div>
           <div class="panel-body">
             <div class="event-input-group">
-              <label>
-                Event
+              <label class="event-name-label">
+                Event Name
                 <input list="attendance-events" v-model="scanForm.eventTitle" type="text" placeholder="Enter event name" />
                 <datalist id="attendance-events">
                   <option v-for="ev in attendanceEvents" :key="ev.id" :value="ev.title"></option>
                 </datalist>
-                <small>Type event name and click Start Event. Existing events are suggested for reuse.</small>
               </label>
             </div>
             <div class="event-details-grid">
@@ -667,9 +754,9 @@
                 <input v-model.number="scanForm.absentFine" type="number" min="0" step="1" />
               </label>
             </div>
-            <div class="button-row">
-              <button type="button" class="primary-action" @click="createAttendanceEvent(scanForm.eventTitle)">Start Event</button>
-              <button type="button" class="secondary-action" @click="closeCurrentAttendanceEvent">Close Event</button>
+            <div class="button-row event-start-actions">
+              <button type="button" class="primary-action" :disabled="!scanForm.eventTitle.trim()" @click="createAttendanceEvent(scanForm.eventTitle)">Start Event</button>
+              <button type="button" class="secondary-action" :disabled="!currentAttendanceEventId" @click="closeCurrentAttendanceEvent">Close Event</button>
             </div>
           </div>
         </section>
@@ -815,30 +902,35 @@
               <h2>Attendance Records</h2>
               <span>{{ filteredAttendance.length }} visible entries</span>
             </div>
-            <strong>{{ attendanceRate }}%</strong>
+            <strong class="attendance-rate">{{ attendanceRate }}%</strong>
           </div>
-          <table>
-            <thead>
-              <tr>
-                <th>Event</th>
-                <th>Student</th>
-                <th>Status</th>
-                <th>Time In</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="record in filteredAttendance" :key="record.id">
-                <td>{{ record.event }}</td>
-                <td>{{ studentName(record.studentId) }}</td>
-                <td><span class="badge neutral">{{ record.status }}</span></td>
-                <td>{{ formatRecordTime(record.recordedAt) }}</td>
-                <td class="table-actions">
-                  <button type="button" @click="removeAttendance(record.id)">Delete</button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+          <div class="attendance-table-wrap">
+            <table class="attendance-records-table">
+              <thead>
+                <tr>
+                  <th>Event</th>
+                  <th>Student</th>
+                  <th>Status</th>
+                  <th>Time In</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-if="!filteredAttendance.length">
+                  <td colspan="5" class="attendance-empty-cell">No attendance records to show.</td>
+                </tr>
+                <tr v-for="record in filteredAttendance" :key="record.id">
+                  <td>{{ record.event }}</td>
+                  <td>{{ studentName(record.studentId) }}</td>
+                  <td><span class="badge neutral">{{ record.status }}</span></td>
+                  <td>{{ formatRecordTime(record.recordedAt) }}</td>
+                  <td class="table-actions">
+                    <button type="button" @click="removeAttendance(record.id)">Delete</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </section>
       </section>
 
@@ -1115,9 +1207,10 @@ import jsQR from 'jsqr';
 import QRCode from 'qrcode';
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 
-const storageKey = 'kier-records-v2';
+const emailQueueStorageKey = 'kier-email-queue-v1';
+const activeViewStorageKey = 'kier-active-view';
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
-const activeView = ref('dashboard');
+const activeView = ref(localStorage.getItem(activeViewStorageKey) || 'dashboard');
 const searchTerm = ref('');
 const selectedStudentId = ref(null);
 const editingStudentId = ref(null);
@@ -1125,9 +1218,21 @@ const toastMessage = ref('');
 const health = ref(null);
 const healthError = ref('');
 const loginOpen = ref(false);
-const authToken = ref(localStorage.getItem('kier-auth-token') || '');
-const authUser = reactive({ username: localStorage.getItem('kier-auth-username') || 'Guest', role: localStorage.getItem('kier-auth-role') || 'Guest' });
-const loginForm = reactive({ username: 'admin', password: 'Admin123!' });
+const storedAuthToken = localStorage.getItem('kier-auth-token') || '';
+const hasLegacyDemoSession = storedAuthToken.startsWith('demo-');
+if (hasLegacyDemoSession) {
+  localStorage.removeItem('kier-auth-token');
+  localStorage.removeItem('kier-auth-username');
+  localStorage.removeItem('kier-auth-role');
+  localStorage.removeItem(activeViewStorageKey);
+}
+const authToken = ref(hasLegacyDemoSession ? '' : storedAuthToken);
+const authUser = reactive({
+  username: hasLegacyDemoSession ? 'Guest' : localStorage.getItem('kier-auth-username') || 'Guest',
+  role: hasLegacyDemoSession ? 'Guest' : localStorage.getItem('kier-auth-role') || 'Guest',
+});
+const authMode = ref('login');
+const loginForm = reactive({ username: '', password: '' });
 const scannerVideo = ref(null);
 const quickScanInput = ref(null);
 const scannerActive = ref(false);
@@ -1154,9 +1259,13 @@ const scanCooldownMs = 750;
 
 const students = ref([]);
 const collections = ref([]);
+const departmentBills = ref([]);
+const courseOptions = ref([]);
+const yearLevelOptions = ref([]);
 const fines = ref([]);
 const attendanceRecords = ref([]);
 const disbursements = ref([]);
+const fundTransactions = ref([]);
 const activity = ref([]);
 const pendingEmails = ref([]);
 const sentEmails = ref([]);
@@ -1167,30 +1276,43 @@ const emailComposer = reactive({
   message: '',
 });
 
-const navItems = [
-  { id: 'dashboard', label: 'Dashboard', short: 'DB' },
-  { id: 'students', label: 'Student Management', short: 'SM' },
-  { id: 'student-info', label: 'Student Info', short: 'SI' },
-  { id: 'collections', label: 'Collections', short: 'CO' },
-  { id: 'fines', label: 'Fines', short: 'FI' },
+const adminNavItems = [
+  { id: 'dashboard', label: 'Overview', short: 'OV' },
+  { id: 'students', label: 'Student Records', short: 'SR' },
+  { id: 'student-info', label: 'Student Profiles', short: 'SP' },
+  { id: 'collections', label: 'Payments', short: 'PM' },
+  { id: 'fines', label: 'Fine Ledger', short: 'FL' },
   { id: 'attendance', label: 'Attendance', short: 'AT' },
-  { id: 'admin', label: 'Admin', short: 'AD' },
-  { id: 'emails', label: 'Emails', short: 'EM' },
+  { id: 'admin', label: 'Admin Center', short: 'AC' },
+  { id: 'emails', label: 'Email Center', short: 'EM' },
   { id: 'transactions', label: 'Transactions', short: 'TR' },
   { id: 'reports', label: 'Reports', short: 'RP' },
 ];
 
+const userNavItems = [
+  { id: 'attendance', label: 'Attendance', short: 'AT' },
+  { id: 'collections', label: 'Payments', short: 'PM' },
+  { id: 'fines', label: 'Payment History', short: 'PH' },
+  { id: 'reports', label: 'My Reports', short: 'MR' },
+];
+
+const navItems = computed(() => {
+  if (isAdmin.value) return adminNavItems;
+  if (isUser.value) return userNavItems;
+  return [];
+});
+
 const sections = {
-  dashboard: { eyebrow: 'Overview', title: 'Department records dashboard', action: 'Add Receipt' },
-  students: { eyebrow: 'Management', title: 'Student management', action: 'Add Student' },
-  'student-info': { eyebrow: 'Directory', title: 'Student information', action: 'View Students' },
-  collections: { eyebrow: 'Ledger', title: 'Collections and receipts', action: 'Add Receipt' },
-  fines: { eyebrow: 'Register', title: 'Fines and payment status', action: 'Add Fine' },
-  admin: { eyebrow: 'Admin', title: 'Student billing and edits', action: 'Admin Actions' },
-  attendance: { eyebrow: 'Events', title: 'Attendance monitoring', action: 'Record Attendance' },
-  emails: { eyebrow: 'Outbox', title: 'Email delivery tracking', action: 'Send Pending' },
-  transactions: { eyebrow: 'Ledger', title: 'All transactions', action: 'Open Reports' },
-  reports: { eyebrow: 'Summary', title: 'Financial and activity reports', action: 'Print' },
+  dashboard: { eyebrow: 'Overview', title: 'Department overview', action: 'Add Receipt' },
+  students: { eyebrow: 'Records', title: 'Student records management', action: 'Add Student' },
+  'student-info': { eyebrow: 'Profiles', title: 'Student profiles', action: 'View Students' },
+  collections: { eyebrow: 'Payments', title: 'Payment ledger', action: 'Add Payment' },
+  fines: { eyebrow: 'Finance', title: 'Fine tracking', action: 'Add Fine' },
+  admin: { eyebrow: 'Admin Center', title: 'Admin Center', action: 'Admin Tools' },
+  attendance: { eyebrow: 'Attendance', title: 'Attendance monitoring', action: 'Record Attendance' },
+  emails: { eyebrow: 'Communication', title: 'Email tracking', action: 'Send Notice' },
+  transactions: { eyebrow: 'All records', title: 'Transaction history', action: 'Open Reports' },
+  reports: { eyebrow: 'Summary', title: 'Reports and summaries', action: 'Print' },
 };
 
 const studentForm = reactive(blankStudent());
@@ -1199,7 +1321,12 @@ const editingCollectionId = ref(null);
 const payingFineId = ref(null);
 const payingFineIds = ref([]);
 const collectionStudentName = ref('');
+const selectedCollectionStudentId = ref(null);
 const receiptEmail = ref('');
+const courseOptionName = ref('');
+const yearLevelOptionName = ref('');
+const editingCourseId = ref(null);
+const editingYearLevelId = ref(null);
 const collectionCategories = ref(['Department Fee', 'Event Contribution', 'Fine Payment', 'Fundraising']);
 const studentSortField = ref('name');
 const studentSortDirection = ref('asc');
@@ -1226,7 +1353,10 @@ const editingDisbursementId = ref(null);
 
 const activeSection = computed(() => sections[activeView.value] || sections.dashboard);
 const isLoggedIn = computed(() => Boolean(authToken.value));
-const canAccessAdmin = computed(() => isLoggedIn.value && ['Administrator', 'Treasurer', 'Officer'].includes(authUser.role));
+const isAdmin = computed(() => ['Administrator', 'Admin', 'Treasurer', 'Officer'].includes(authUser.role));
+const isUser = computed(() => ['User', 'Student', 'Member'].includes(authUser.role));
+const canManageRecords = computed(() => isAdmin.value);
+const canAccessAdmin = computed(() => isLoggedIn.value && isAdmin.value);
 const apiOnline = computed(() => health.value?.status === 'Running');
 const healthDetail = computed(() => {
   if (health.value) {
@@ -1302,12 +1432,15 @@ const collectionNameSuggestions = computed(() => {
     return [];
   }
 
-  const matches = students.value
-    .filter((student) => String(student.name || '').toLowerCase().includes(term))
-    .slice(0, 6)
-    .map((student) => student.name);
+  const matches = students.value.filter((student) =>
+    [student.name, student.studentNo].some((value) => String(value || '').toLowerCase().includes(term)),
+  );
 
-  return matches.some((name) => name.toLowerCase() === term) ? [] : matches;
+  if (selectedCollectionStudentId.value) {
+    return matches.filter((student) => student.id !== selectedCollectionStudentId.value).slice(0, 6);
+  }
+
+  return matches.slice(0, 6);
 });
 const fineNameSuggestions = computed(() => {
   const term = String(fineStudentName.value || '').trim().toLowerCase();
@@ -1457,27 +1590,27 @@ const transactionGroups = computed(() => {
   ];
 });
 
-watch(
-  [
-    students,
-    collections,
-    fines,
-    attendanceRecords,
-    attendanceEvents,
-    currentAttendanceEventId,
-    disbursements,
-    activity,
-    pendingEmails,
-    sentEmails,
-  ],
-  saveState,
-  { deep: true },
-);
+watch([pendingEmails, sentEmails], saveEmailQueue, { deep: true });
+watch(activeView, (view) => {
+  if (isLoggedIn.value) {
+    localStorage.setItem(activeViewStorageKey, view);
+  } else {
+    localStorage.removeItem(activeViewStorageKey);
+  }
+});
 watch(students, generateStudentQrCodes, { deep: true });
 
 onMounted(async () => {
-  loadState();
-  reconcileFinePayments();
+  loadEmailQueue();
+  const savedView = localStorage.getItem(activeViewStorageKey);
+  const userViews = ['attendance', 'collections', 'fines', 'reports'];
+  if (isAdmin.value) {
+    activeView.value = savedView && sections[savedView] ? savedView : 'students';
+  } else if (isUser.value) {
+    activeView.value = userViews.includes(savedView) ? savedView : 'attendance';
+  } else {
+    activeView.value = 'dashboard';
+  }
   selectedStudentId.value = null;
   resetStudentForm();
   await generateStudentQrCodes();
@@ -1543,53 +1676,133 @@ function apiFetch(path, options = {}) {
   return fetch(apiUrl(path), init);
 }
 
+async function apiJson(path, options = {}) {
+  const response = await apiFetch(path, options);
+  if (!response.ok) {
+    throw new Error(await responseMessage(response));
+  }
+  if (response.status === 204) {
+    return null;
+  }
+  return response.json();
+}
+
 async function loadBackendData() {
   if (!isLoggedIn.value) {
     return;
   }
 
   try {
-    const [studentsResponse, collectionsResponse, finesResponse, attendanceResponse, attendanceEventsResponse] = await Promise.all([
-      apiFetch('/api/students'),
-      apiFetch('/api/collections'),
-      apiFetch('/api/fines'),
-      apiFetch('/api/attendance'),
-      apiFetch('/api/attendance/events'),
+    const [studentRows, paymentRows, billRows, fineRows, attendanceRows, eventRows, expenseRows, fundRows, courseRows, yearRows, departmentBillRows, activityRows] = await Promise.all([
+      apiJson('/api/students'),
+      apiJson('/api/collections'),
+      apiJson('/api/collectibles'),
+      apiJson('/api/fines'),
+      apiJson('/api/attendance'),
+      apiJson('/api/attendance/events'),
+      apiJson('/api/disbursements'),
+      apiJson('/api/fundtransactions'),
+      apiJson('/api/courses'),
+      apiJson('/api/year-levels'),
+      apiJson('/api/department-bills'),
+      apiJson('/api/activity'),
     ]);
 
-    if (studentsResponse.ok) {
-      students.value = (await studentsResponse.json()).map(normalizeStudentRecord);
+    courseOptions.value = courseRows;
+    yearLevelOptions.value = yearRows;
+    departmentBills.value = departmentBillRows;
+    students.value = studentRows.map(normalizeStudentRecord);
+    ensureAcademicOptions(students.value);
+    collections.value = [
+      ...paymentRows.map((payment) => ({
+        id: payment.id,
+        backendId: payment.id,
+        backendType: 'payment',
+        receipt: payment.receiptNumber,
+        studentId: payment.studentId,
+        category: payment.category,
+        amount: Number(payment.amountPaid),
+        month: new Date(payment.paymentDate).toLocaleString('en-US', { month: 'short' }),
+        status: 'Paid',
+        fineId: null,
+        fineIds: [],
+      })),
+      ...billRows.map((bill) => ({
+        id: `collectible-${bill.id}`,
+        backendId: bill.id,
+        backendType: 'collectible',
+        departmentBillId: bill.departmentBillId,
+        receipt: `BILL-${bill.id}`,
+        studentId: bill.studentId,
+        category: bill.description,
+        amount: Number(bill.amountDue),
+        month: new Date(bill.dueDate).toLocaleString('en-US', { month: 'short' }),
+        status: bill.isPaid ? 'Paid' : 'Unpaid',
+        fineId: null,
+        fineIds: [],
+      })),
+    ];
+    fines.value = fineRows.map((fine) => ({
+      id: fine.id,
+      studentId: fine.studentId,
+      category: fine.category,
+      amount: Number(fine.amount),
+      status: fine.isPaid ? 'Paid' : 'Unpaid',
+      dateIssued: fine.dateIssued,
+      remarks: fine.remarks,
+    }));
+    attendanceRecords.value = attendanceRows.map((record) => ({
+      id: record.id,
+      event: record.event,
+      studentId: record.studentId,
+      status: record.status,
+      recordedAt: record.recordedAt,
+    }));
+    attendanceEvents.value = eventRows.map((event) => ({
+      id: event.id,
+      title: event.title,
+      eventDate: event.eventDate,
+      location: event.location,
+      description: event.description,
+      sessionType: event.sessionType,
+      openAt: event.openAt,
+      lateAt: event.lateAt,
+      closeAt: event.closeAt,
+      absentFine: Number(event.absentFine || 0),
+      closedAt: event.closedAt,
+      absentProcessed: event.absentProcessed,
+    }));
+    const openEvent = attendanceEvents.value.find((event) => !event.closedAt);
+    currentAttendanceEventId.value = openEvent?.id ?? null;
+    if (openEvent) {
+      scanForm.eventTitle = openEvent.title;
+      scanForm.sessionType = openEvent.sessionType || 'Log In';
+      scanForm.absentFine = Number(openEvent.absentFine || 0);
+      scanForm.openTime = eventTimeValue(openEvent.openAt) || scanForm.openTime;
+      scanForm.closeTime = eventTimeValue(openEvent.closeAt) || scanForm.closeTime;
     }
-
-    if (collectionsResponse.ok) {
-      collections.value = await collectionsResponse.json();
-    }
-
-    if (finesResponse.ok) {
-      fines.value = await finesResponse.json();
-    }
-
-    if (attendanceResponse.ok) {
-      attendanceRecords.value = await attendanceResponse.json();
-    }
-
-    if (attendanceEventsResponse.ok) {
-      const loadedEvents = await attendanceEventsResponse.json();
-      attendanceEvents.value = Array.isArray(loadedEvents)
-        ? loadedEvents.map((event) => ({
-            id: event.id,
-            title: event.title,
-            eventDate: event.eventDate,
-            location: event.location,
-            description: event.description,
-          }))
-        : [];
-    }
-
-    reconcileFinePayments();
+    disbursements.value = expenseRows.map((expense) => ({
+      id: expense.id,
+      backendId: expense.id,
+      description: expense.purpose,
+      usedBy: expense.payee,
+      amount: Number(expense.amount),
+      month: new Date(expense.dateReleased).toLocaleString('en-US', { month: 'short' }),
+    }));
+    fundTransactions.value = fundRows;
+    activity.value = activityRows.map((entry) => {
+      const separator = entry.action.indexOf(': ');
+      return {
+        id: entry.id,
+        type: separator >= 0 ? entry.action.slice(0, separator) : 'Activity',
+        title: separator >= 0 ? entry.action.slice(separator + 2) : entry.action,
+        detail: entry.details,
+      };
+    });
     notify('Backend data synced');
   } catch (error) {
     console.warn('Backend data load failed:', error);
+    notify(`Database data could not be loaded: ${error instanceof Error ? error.message : 'API unavailable'}`);
   }
 }
 
@@ -1600,8 +1813,20 @@ async function initializeAuth() {
 
   try {
     const response = await apiFetch('/api/auth/me');
+    if (response.status === 401 || response.status === 403) {
+      authToken.value = '';
+      authUser.username = 'Guest';
+      authUser.role = 'Guest';
+      localStorage.removeItem('kier-auth-token');
+      localStorage.removeItem('kier-auth-username');
+      localStorage.removeItem('kier-auth-role');
+      localStorage.removeItem(activeViewStorageKey);
+      activeView.value = 'dashboard';
+      return;
+    }
+
     if (!response.ok) {
-      throw new Error('Invalid token');
+      return;
     }
 
     const result = await response.json();
@@ -1612,17 +1837,12 @@ async function initializeAuth() {
 
     await loadBackendData();
   } catch {
-    authToken.value = '';
-    authUser.username = 'Guest';
-    authUser.role = 'Guest';
-    localStorage.removeItem('kier-auth-token');
-    localStorage.removeItem('kier-auth-username');
-    localStorage.removeItem('kier-auth-role');
+    // Keep the local session active when the API is temporarily unreachable.
   }
 }
 
 function blankStudent() {
-  return { studentNo: '', firstName: '', lastName: '', suffix: '', name: '', course: '', yearLevel: '', contact: '', email: '', rfidUid: '' };
+  return { studentNo: '', firstName: '', lastName: '', suffix: '', name: '', course: '', courseId: null, yearLevel: '', yearLevelId: null, contact: '', email: '', rfidUid: '' };
 }
 
 function splitStudentName(name) {
@@ -1674,14 +1894,178 @@ function studentFromForm(id = null) {
   const firstName = String(studentForm.firstName || '').trim();
   const lastName = String(studentForm.lastName || '').trim();
   const suffix = String(studentForm.suffix || '').trim();
+  const course = courseOptions.value.find((option) => option.id === studentForm.courseId);
+  const yearLevel = yearLevelOptions.value.find((option) => option.id === studentForm.yearLevelId);
   return {
     ...(id ? { id } : {}),
     ...studentForm,
     firstName,
     lastName,
     suffix,
+    course: course?.name || '',
+    courseId: course?.id ?? null,
+    yearLevel: yearLevel?.name || '',
+    yearLevelId: yearLevel?.id ?? null,
     name: [firstName, lastName, suffix].filter(Boolean).join(' '),
   };
+}
+
+function ensureAcademicOptions(studentRecords) {
+  for (const student of studentRecords) {
+    let course = courseOptions.value.find((option) => option.id === student.courseId);
+    if (!course && student.course) {
+      course = courseOptions.value.find((option) => option.name.toLowerCase() === String(student.course).toLowerCase());
+      if (!course) {
+        course = { id: nextId(courseOptions.value), name: String(student.course).trim() };
+        courseOptions.value.push(course);
+      }
+    }
+    if (course) {
+      student.courseId = course.id;
+      student.course = course.name;
+    }
+
+    let yearLevel = yearLevelOptions.value.find((option) => option.id === student.yearLevelId);
+    if (!yearLevel && student.yearLevel) {
+      yearLevel = yearLevelOptions.value.find((option) => option.name.toLowerCase() === String(student.yearLevel).toLowerCase());
+      if (!yearLevel) {
+        yearLevel = { id: nextId(yearLevelOptions.value), name: String(student.yearLevel).trim() };
+        yearLevelOptions.value.push(yearLevel);
+      }
+    }
+    if (yearLevel) {
+      student.yearLevelId = yearLevel.id;
+      student.yearLevel = yearLevel.name;
+    }
+  }
+}
+
+async function saveCourseOption() {
+  if (!canManageRecords.value) {
+    notify('Only admins can manage course options');
+    return;
+  }
+
+  const name = String(courseOptionName.value || '').trim();
+  const duplicate = courseOptions.value.find((option) =>
+    option.name.toLowerCase() === name.toLowerCase() && option.id !== editingCourseId.value,
+  );
+  if (!name || duplicate) {
+    notify(duplicate ? 'That course already exists' : 'Enter a course name');
+    return;
+  }
+
+  const existing = courseOptions.value.find((option) => option.id === editingCourseId.value);
+  try {
+    const savedCourse = await apiJson(existing ? `/api/courses/${existing.id}` : '/api/courses', {
+      method: existing ? 'PUT' : 'POST',
+      body: JSON.stringify({ name }),
+    });
+    if (existing) {
+      Object.assign(existing, savedCourse);
+      for (const student of students.value.filter((record) => record.courseId === existing.id)) {
+        student.course = savedCourse.name;
+      }
+    } else {
+      courseOptions.value.push(savedCourse);
+    }
+  } catch (error) {
+    notify(`Course could not be saved: ${error instanceof Error ? error.message : 'Database unavailable'}`);
+    return;
+  }
+  cancelCourseEdit();
+  notify('Course options updated');
+}
+
+function editCourseOption(course) {
+  editingCourseId.value = course.id;
+  courseOptionName.value = course.name;
+}
+
+function cancelCourseEdit() {
+  editingCourseId.value = null;
+  courseOptionName.value = '';
+}
+
+async function removeCourseOption(courseId) {
+  if (!canManageRecords.value) {
+    notify('Only admins can manage course options');
+    return;
+  }
+
+  try {
+    await apiJson(`/api/courses/${courseId}`, { method: 'DELETE' });
+  } catch (error) {
+    notify(`Course could not be deleted: ${error instanceof Error ? error.message : 'Database unavailable'}`);
+    return;
+  }
+  courseOptions.value = courseOptions.value.filter((option) => option.id !== courseId);
+  if (editingCourseId.value === courseId) cancelCourseEdit();
+  notify('Course option deleted');
+}
+
+async function saveYearLevelOption() {
+  if (!canManageRecords.value) {
+    notify('Only admins can manage year options');
+    return;
+  }
+
+  const name = String(yearLevelOptionName.value || '').trim();
+  const duplicate = yearLevelOptions.value.find((option) =>
+    option.name.toLowerCase() === name.toLowerCase() && option.id !== editingYearLevelId.value,
+  );
+  if (!name || duplicate) {
+    notify(duplicate ? 'That year level already exists' : 'Enter a year level');
+    return;
+  }
+
+  const existing = yearLevelOptions.value.find((option) => option.id === editingYearLevelId.value);
+  try {
+    const savedYear = await apiJson(existing ? `/api/year-levels/${existing.id}` : '/api/year-levels', {
+      method: existing ? 'PUT' : 'POST',
+      body: JSON.stringify({ name }),
+    });
+    if (existing) {
+      Object.assign(existing, savedYear);
+      for (const student of students.value.filter((record) => record.yearLevelId === existing.id)) {
+        student.yearLevel = savedYear.name;
+      }
+    } else {
+      yearLevelOptions.value.push(savedYear);
+    }
+  } catch (error) {
+    notify(`Year level could not be saved: ${error instanceof Error ? error.message : 'Database unavailable'}`);
+    return;
+  }
+  cancelYearLevelEdit();
+  notify('Year level options updated');
+}
+
+function editYearLevelOption(yearLevel) {
+  editingYearLevelId.value = yearLevel.id;
+  yearLevelOptionName.value = yearLevel.name;
+}
+
+function cancelYearLevelEdit() {
+  editingYearLevelId.value = null;
+  yearLevelOptionName.value = '';
+}
+
+async function removeYearLevelOption(yearLevelId) {
+  if (!canManageRecords.value) {
+    notify('Only admins can manage year options');
+    return;
+  }
+
+  try {
+    await apiJson(`/api/year-levels/${yearLevelId}`, { method: 'DELETE' });
+  } catch (error) {
+    notify(`Year level could not be deleted: ${error instanceof Error ? error.message : 'Database unavailable'}`);
+    return;
+  }
+  yearLevelOptions.value = yearLevelOptions.value.filter((option) => option.id !== yearLevelId);
+  if (editingYearLevelId.value === yearLevelId) cancelYearLevelEdit();
+  notify('Year level option deleted');
 }
 
 function backendLastName(student) {
@@ -1689,6 +2073,18 @@ function backendLastName(student) {
 }
 
 function setView(view) {
+  if (!isLoggedIn.value) {
+    openLogin();
+    return;
+  }
+
+  const userProtectedViews = ['students', 'student-info', 'admin', 'emails', 'transactions'];
+  if (isUser.value && userProtectedViews.includes(view)) {
+    notify('Only administrators can access student records and management tools.');
+    activeView.value = 'attendance';
+    return;
+  }
+
   if (view === 'admin' && !canAccessAdmin.value) {
     notify('Please sign in with an administrator account to open admin tools.');
     openLogin();
@@ -1701,41 +2097,49 @@ function setView(view) {
 }
 
 function openLogin() {
+  loginForm.username = '';
+  loginForm.password = '';
+  authMode.value = 'login';
   loginOpen.value = true;
 }
 
 async function login() {
-  try {
-    const response = await apiFetch('/api/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({
-        username: loginForm.username,
-        password: loginForm.password,
-      }),
-    });
+  const username = String(loginForm.username || '').trim();
+  const password = String(loginForm.password || '');
 
+  if (!username || !password) {
+    notify('Please enter a username and password.');
+    return;
+  }
+
+  try {
+    const endpoint = authMode.value === 'register' ? '/api/auth/register' : '/api/auth/login';
+    const response = await fetch(apiUrl(endpoint), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password, role: 'Student' }),
+    });
+    const result = await response.json().catch(() => ({}));
     if (!response.ok) {
-      const message = await responseMessage(response);
-      notify(message || 'Login failed');
+      notify(result.message || `Sign-in failed (${response.status})`);
       return;
     }
 
-    const result = await response.json();
-    authToken.value = result.token || '';
-    authUser.username = result.username || loginForm.username;
-    authUser.role = result.role || 'Administrator';
-
+    authToken.value = result.token;
+    authUser.username = result.username;
+    authUser.role = result.role;
     localStorage.setItem('kier-auth-token', authToken.value);
     localStorage.setItem('kier-auth-username', authUser.username);
     localStorage.setItem('kier-auth-role', authUser.role);
 
     loginOpen.value = false;
     loginForm.password = '';
+    authMode.value = 'login';
+    activeView.value = isAdmin.value ? 'students' : 'attendance';
     notify(`Signed in as ${authUser.username}`);
-
     await loadBackendData();
   } catch (error) {
-    notify(error instanceof Error ? error.message : 'Unable to sign in');
+    notify(`Database sign-in unavailable: ${error instanceof Error ? error.message : 'Unable to reach the API'}`);
   }
 }
 
@@ -1746,8 +2150,12 @@ function logout() {
   localStorage.removeItem('kier-auth-token');
   localStorage.removeItem('kier-auth-username');
   localStorage.removeItem('kier-auth-role');
+  localStorage.removeItem(activeViewStorageKey);
+  selectedCollectionStudentId.value = null;
+  collectionStudentName.value = '';
   notify('Signed out');
-  setView('dashboard');
+  activeView.value = 'dashboard';
+  loginOpen.value = false;
 }
 
 function selectStudent(studentId) {
@@ -1761,6 +2169,7 @@ function goToCollectionsForStudent(studentId) {
   }
 
   collectionStudentName.value = student.name;
+  selectedCollectionStudentId.value = student.id;
   receiptEmail.value = student.email || '';
   payingFineId.value = null;
   payingFineIds.value = [];
@@ -1783,6 +2192,7 @@ function openAdminAddReceipt(studentId) {
 
   // Prefill admin quick-action collection form
   collectionStudentName.value = student.name;
+  selectedCollectionStudentId.value = student.id;
   collectionForm.studentId = student.id;
   collectionForm.category = 'Event Contribution';
   collectionForm.amount = '';
@@ -1805,30 +2215,6 @@ function openAdminAddFine(studentId) {
   fineForm.status = 'Unpaid';
   editingFineId.value = null;
   activeView.value = 'admin';
-}
-
-function seedSampleStudent() {
-  const exists = students.value.find((s) => s.name === 'KIER LANAYON');
-  if (exists) {
-    notify('Sample student already exists');
-    return;
-  }
-
-  const student = {
-    id: nextId(students.value),
-    studentNo: String(1000 + nextId(students.value)),
-    firstName: 'KIER',
-    lastName: 'LANAYON',
-    suffix: '',
-    name: 'KIER LANAYON',
-    course: 'BSCS',
-    yearLevel: '1',
-    contact: '',
-    email: '',
-    rfidUid: '',
-  };
-  students.value.unshift(student);
-  notify('Sample student created');
 }
 
 function qrPayload(studentNo) {
@@ -1906,30 +2292,27 @@ function studentByName(name) {
     return null;
   }
 
-  return students.value.find((student) => String(student.name || '').toLowerCase().includes(normalized)) || null;
+  return students.value.find((student) =>
+    String(student.name || '').trim().toLowerCase() === normalized
+      || String(student.studentNo || '').trim().toLowerCase() === normalized,
+  ) || null;
 }
 
 function handleCollectionStudentNameInput() {
   const term = String(collectionStudentName.value || '').trim();
-  if (!term) {
-    return;
-  }
-
-  const matches = students.value.filter((student) => String(student.name || '').toLowerCase().includes(term.toLowerCase()));
-  if (matches.length === 1) {
-    collectionStudentName.value = matches[0].name;
-    if (!receiptEmail.value && matches[0].email) {
-      receiptEmail.value = matches[0].email;
-    }
+  selectedCollectionStudentId.value = null;
+  receiptEmail.value = '';
+  const exactMatch = studentByName(term);
+  if (exactMatch) {
+    selectedCollectionStudentId.value = exactMatch.id;
+    receiptEmail.value = exactMatch.email || '';
   }
 }
 
-function selectCollectionStudentName(name) {
-  collectionStudentName.value = name;
-  const matchedStudent = studentByName(name);
-  if (!receiptEmail.value && matchedStudent?.email) {
-    receiptEmail.value = matchedStudent.email;
-  }
+function selectCollectionStudentName(student) {
+  collectionStudentName.value = student.name;
+  selectedCollectionStudentId.value = student.id;
+  receiptEmail.value = student.email || '';
 }
 
 function handleFineStudentNameInput() {
@@ -2097,9 +2480,11 @@ function attendanceWindowPayload() {
   return {
     openAt: activeEvent?.openAt || null,
     lateAt: activeEvent?.lateAt || activeEvent?.closeAt || null,
-    closeAt: null,
+    closeAt: activeEvent?.closeAt || null,
     finePerLateMinute: Number(scanForm.finePerLateMinute || 0),
     maxLateFine: Number(scanForm.maxLateFine || 0),
+    sessionType: activeEvent?.sessionType || scanForm.sessionType,
+    absentFine: Number(activeEvent?.absentFine ?? scanForm.absentFine ?? 0),
   };
 }
 
@@ -2111,31 +2496,53 @@ function notify(message) {
   }, 2400);
 }
 
-function logActivity(type, title, detail) {
-  activity.value.unshift({ id: Date.now(), type, title, detail });
+async function logActivity(type, title, detail) {
+  try {
+    await apiJson('/api/activity', {
+      method: 'POST',
+      body: JSON.stringify({ action: `${type}: ${title}`, details: detail }),
+    });
+  } catch (error) {
+    console.warn('Activity log was not saved to the database:', error);
+  }
 }
 
 async function saveStudent() {
+  if (!canManageRecords.value) {
+    notify('Only admins can edit student records.');
+    return;
+  }
+
   const formStudent = studentFromForm(editingStudentId.value);
+  const duplicateStudentNumber = students.value.find(
+    (student) => student.studentNo.trim().toLowerCase() === formStudent.studentNo.trim().toLowerCase()
+      && student.id !== editingStudentId.value,
+  );
+  if (duplicateStudentNumber) {
+    notify('That student ID is already enrolled.');
+    return;
+  }
+
   if (editingStudentId.value) {
     const index = students.value.findIndex((student) => student.id === editingStudentId.value);
     if (index >= 0) {
-      students.value[index] = { ...students.value[index], ...formStudent };
-      await updateBackendStudent(students.value[index]);
+      const updatedStudent = await updateBackendStudent({ ...students.value[index], ...formStudent });
+      students.value[index] = updatedStudent;
       logActivity('Student', `${formStudent.name} updated`, 'Student profile was changed');
       notify('Student updated');
     }
   } else {
-    const student = studentFromForm(nextId(students.value));
+    const student = studentFromForm();
+    const savedStudent = await createBackendStudent(student);
+    Object.assign(student, savedStudent);
     students.value.unshift(student);
-    await createBackendStudent(student);
     selectedStudentId.value = student.id;
-    logActivity('Student', `${student.name} added`, 'New student record created');
+    logActivity('Student', `${student.name} added`, 'New student record created in the database');
 
     if (student.email) {
       await sendStudentQrEmail(student);
     } else {
-      notify('Student saved. No QR email was sent because no email address was provided.');
+      notify('Student saved to the database. No QR email was sent because no email address was provided.');
     }
   }
 
@@ -2199,56 +2606,60 @@ async function sendStudentQrEmail(student) {
 }
 
 async function createBackendStudent(student) {
-  try {
-    await apiFetch('/api/students', {
-      method: 'POST',
-      body: JSON.stringify({
-        studentNo: student.studentNo,
-        firstName: student.firstName || student.name,
-        lastName: backendLastName(student),
-        course: student.course,
-        yearLevel: student.yearLevel,
-        contactNumber: student.contact || '',
-        email: student.email || '',
-        rfidUid: normalizeRfid(student.rfidUid),
-      }),
-    });
-  } catch {
-    // The frontend still works offline; QR scans will sync once the backend has the student.
-  }
+  const result = await apiJson('/api/students', {
+    method: 'POST',
+    body: JSON.stringify({
+      studentNo: student.studentNo,
+      firstName: student.firstName || student.name,
+      lastName: backendLastName(student),
+      course: student.course,
+      yearLevel: student.yearLevel,
+      courseId: student.courseId,
+      yearLevelId: student.yearLevelId,
+      contactNumber: student.contact || '',
+      email: student.email || '',
+      rfidUid: normalizeRfid(student.rfidUid),
+    }),
+  });
+  return normalizeStudentRecord(result);
 }
 
 async function updateBackendStudent(student) {
-  try {
-    await apiFetch(`/api/students/${student.id}`, {
-      method: 'PUT',
-      body: JSON.stringify({
-        studentNo: student.studentNo,
-        firstName: student.firstName || student.name,
-        lastName: backendLastName(student),
-        course: student.course,
-        yearLevel: student.yearLevel,
-        contactNumber: student.contact || '',
-        email: student.email || '',
-        rfidUid: normalizeRfid(student.rfidUid),
-      }),
-    });
-  } catch {
-    // Local edits stay available even when the backend is offline.
-  }
+  const result = await apiJson(`/api/students/${student.id}`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      studentNo: student.studentNo,
+      firstName: student.firstName || student.name,
+      lastName: backendLastName(student),
+      course: student.course,
+      yearLevel: student.yearLevel,
+      courseId: student.courseId,
+      yearLevelId: student.yearLevelId,
+      contactNumber: student.contact || '',
+      email: student.email || '',
+      rfidUid: normalizeRfid(student.rfidUid),
+    }),
+  });
+  return normalizeStudentRecord(result);
 }
 
 function editStudent(student) {
   const normalizedStudent = normalizeStudentRecord(student);
   editingStudentId.value = student.id;
+  const course = courseOptions.value.find((option) => option.id === normalizedStudent.courseId)
+    || courseOptions.value.find((option) => option.name.toLowerCase() === String(normalizedStudent.course || '').toLowerCase());
+  const yearLevel = yearLevelOptions.value.find((option) => option.id === normalizedStudent.yearLevelId)
+    || yearLevelOptions.value.find((option) => option.name.toLowerCase() === String(normalizedStudent.yearLevel || '').toLowerCase());
   Object.assign(studentForm, {
     studentNo: normalizedStudent.studentNo,
     firstName: normalizedStudent.firstName,
     lastName: normalizedStudent.lastName,
     suffix: normalizedStudent.suffix,
     name: normalizedStudent.name,
-    course: normalizedStudent.course,
-    yearLevel: normalizedStudent.yearLevel,
+    course: course?.name || normalizedStudent.course,
+    courseId: course?.id ?? null,
+    yearLevel: yearLevel?.name || normalizedStudent.yearLevel,
+    yearLevelId: yearLevel?.id ?? null,
     contact: normalizedStudent.contact || '',
     email: normalizedStudent.email || '',
     rfidUid: normalizedStudent.rfidUid || '',
@@ -2260,11 +2671,22 @@ function resetStudentForm() {
   Object.assign(studentForm, blankStudent());
 }
 
-function removeStudent(studentId) {
-  students.value = students.value.filter((student) => student.id !== studentId);
-  collections.value = collections.value.filter((collection) => collection.studentId !== studentId);
-  fines.value = fines.value.filter((fine) => fine.studentId !== studentId);
-  attendanceRecords.value = attendanceRecords.value.filter((record) => record.studentId !== studentId);
+async function removeStudent(studentId) {
+  if (!canManageRecords.value) {
+    notify('Only admins can remove students.');
+    return;
+  }
+
+  try {
+    await apiJson(`/api/students/${studentId}`, { method: 'DELETE' });
+    students.value = students.value.filter((student) => student.id !== studentId);
+    collections.value = collections.value.filter((collection) => collection.studentId !== studentId);
+    fines.value = fines.value.filter((fine) => fine.studentId !== studentId);
+    attendanceRecords.value = attendanceRecords.value.filter((record) => record.studentId !== studentId);
+  } catch (error) {
+    notify(`Student could not be deleted: ${error instanceof Error ? error.message : 'Database unavailable'}`);
+    return;
+  }
   if (selectedStudentId.value === studentId) {
     selectedStudentId.value = null;
   }
@@ -2273,6 +2695,15 @@ function removeStudent(studentId) {
 }
 
 async function addCollection() {
+  if (editingCollectionId.value && !canManageRecords.value) {
+    notify('Only admins can edit ledger entries.');
+    return;
+  }
+
+  const existingCollection = editingCollectionId.value
+    ? collections.value.find((collection) => collection.id === editingCollectionId.value)
+    : null;
+  const status = existingCollection?.status || 'Paid';
   const linkedFineIds = currentPayingFineIds();
   const linkedFineId = linkedFineIds[0] || null;
   const linkedFines = fines.value.filter((fine) => linkedFineIds.includes(fine.id));
@@ -2283,47 +2714,95 @@ async function addCollection() {
     collectionCategories.value.push(category);
   }
 
-  const receipt =
-    collectionForm.receipt || (collectionForm.status === 'Unpaid' ? `BILL-${nextReference('BILL')}` : nextReceipt());
+  const receipt = collectionForm.receipt || (status === 'Unpaid' ? `BILL-${nextReference('BILL')}` : nextReceipt());
   const typedName = String(collectionStudentName.value || '').trim();
-  const matchedStudent = studentByName(typedName);
-  const resolvedStudentId = matchedStudent ? matchedStudent.id : collectionForm.studentId;
+  const matchedStudent = students.value.find((student) => student.id === selectedCollectionStudentId.value)
+    || studentByName(typedName);
+  if (!matchedStudent) {
+    notify('Choose a student from the suggestions before recording a payment.');
+    return;
+  }
+  const resolvedStudentId = matchedStudent.id;
 
   if (!receiptEmail.value && matchedStudent?.email) {
     receiptEmail.value = matchedStudent.email;
   }
 
-  if (editingCollectionId.value) {
-    const existing = collections.value.find((c) => c.id === editingCollectionId.value);
-    if (existing) {
-      existing.receipt = receipt;
-      existing.studentId = resolvedStudentId;
-      existing.category = category;
-      existing.amount = Number(collectionForm.amount || 0);
-      existing.month = currentMonth();
-      existing.status = collectionForm.status || existing.status;
-      existing.fineId = existing.fineId || linkedFineId || null;
-      existing.fineIds = existing.fineIds?.length ? existing.fineIds : linkedFineIds;
+  const amount = Number(collectionForm.amount || 0);
+  const isCollectible = existingCollection?.backendType === 'collectible' || status === 'Unpaid';
+  let savedRecord;
+  try {
+    if (isCollectible) {
+      const request = {
+        studentId: resolvedStudentId,
+        description: category,
+        amountDue: amount,
+        dueDate: new Date().toISOString(),
+        isPaid: status === 'Paid',
+      };
+      savedRecord = await apiJson(
+        existingCollection ? `/api/collectibles/${existingCollection.backendId}` : '/api/collectibles',
+        { method: existingCollection ? 'PUT' : 'POST', body: JSON.stringify(request) },
+      );
+    } else {
+      const request = {
+        studentId: resolvedStudentId,
+        amountPaid: amount,
+        paymentDate: new Date().toISOString(),
+        collectorName: authUser.username,
+        receiptNumber: receipt,
+        category,
+      };
+      savedRecord = await apiJson(
+        existingCollection ? `/api/collections/${existingCollection.backendId}` : '/api/collections',
+        { method: existingCollection ? 'PUT' : 'POST', body: JSON.stringify(request) },
+      );
     }
-  } else {
-    collections.value.unshift({
-      id: nextId(collections.value),
-      receipt,
-      studentId: resolvedStudentId,
-      category,
-      amount: Number(collectionForm.amount || 0),
-      month: currentMonth(),
-      status: collectionForm.status || 'Paid',
-      fineId: linkedFineId || null,
-      fineIds: linkedFineIds,
-    });
+  } catch (error) {
+    notify(`Payment could not be saved to the database: ${error instanceof Error ? error.message : 'API unavailable'}`);
+    return;
   }
 
-  syncLinkedFinePayments(linkedFineIds, collectionForm.status === 'Paid');
+  const savedEntry = isCollectible
+    ? {
+        id: `collectible-${savedRecord.id}`,
+        backendId: savedRecord.id,
+        backendType: 'collectible',
+        receipt: existingCollection?.receipt || `BILL-${savedRecord.id}`,
+        studentId: savedRecord.studentId,
+        category: savedRecord.description,
+        amount: Number(savedRecord.amountDue),
+        month: new Date(savedRecord.dueDate).toLocaleString('en-US', { month: 'short' }),
+        status: savedRecord.isPaid ? 'Paid' : 'Unpaid',
+        fineId: existingCollection?.fineId || linkedFineId || null,
+        fineIds: existingCollection?.fineIds || linkedFineIds,
+      }
+    : {
+        id: savedRecord.id,
+        backendId: savedRecord.id,
+        backendType: 'payment',
+        receipt: savedRecord.receiptNumber,
+        studentId: savedRecord.studentId,
+        category: savedRecord.category,
+        amount: Number(savedRecord.amountPaid),
+        month: new Date(savedRecord.paymentDate).toLocaleString('en-US', { month: 'short' }),
+        status: 'Paid',
+        fineId: linkedFineId,
+        fineIds: linkedFineIds,
+      };
+
+  if (existingCollection) {
+    Object.assign(existingCollection, savedEntry);
+  } else {
+    collections.value.unshift(savedEntry);
+  }
+
+  syncLinkedFinePayments(linkedFineIds, status === 'Paid');
   payingFineId.value = null;
   payingFineIds.value = [];
 
-  const shouldSendReceipt = Boolean(receiptEmail.value);
+  const shouldSendReceipt = Boolean(receiptEmail.value && status === 'Paid');
+  let receiptEmailNotice = '';
   if (shouldSendReceipt) {
     try {
       const response = await apiFetch('/api/email/receipt', {
@@ -2350,37 +2829,53 @@ async function addCollection() {
 
         const message = result?.message || response.statusText || 'Email send failed';
         const errorDetail = result?.error || details || '';
-        notify(
-          `Collection saved, but email could not be sent: ${message}${errorDetail ? ` (${errorDetail})` : ''}`,
-        );
-        return;
+        receiptEmailNotice = `Receipt email failed: ${message}${errorDetail ? ` (${errorDetail})` : ''}.`;
+      } else {
+        receiptEmailNotice = 'Receipt email sent.';
       }
     } catch (error) {
-      notify(`Collection saved, but email could not be sent: ${error instanceof Error ? error.message : String(error)}`);
-      return;
+      receiptEmailNotice = `Receipt email failed: ${error instanceof Error ? error.message : String(error)}.`;
     }
   }
+
+  const transactionNotice = await sendTransactionEmailsToAll(
+    'Transaction update',
+    `${studentName(resolvedStudentId)} recorded a ${category} payment of ${money(collectionForm.amount || 0)}.`,
+    {
+      receiptNumber: receipt,
+      category,
+      amount: money(collectionForm.amount || 0),
+      paymentStatus: status,
+      studentName: studentName(resolvedStudentId),
+    },
+  );
 
   logActivity('Receipt', `${receipt} recorded`, `${studentName(resolvedStudentId)} paid ${money(collectionForm.amount)}`);
   collectionForm.category = '';
   collectionForm.amount = '';
   collectionForm.receipt = '';
+  collectionForm.status = 'Paid';
   collectionForm.studentId = 1;
   collectionStudentName.value = '';
+  selectedCollectionStudentId.value = null;
   receiptEmail.value = '';
   editingCollectionId.value = null;
   payingFineId.value = null;
   payingFineIds.value = [];
-  notify(shouldSendReceipt ? 'Collection saved and receipt email sent' : 'Collection saved. No receipt email was sent because no recipient address was provided.');
+  notify(`Payment saved.${receiptEmailNotice ? ` ${receiptEmailNotice}` : ''}${emailDeliverySummary(transactionNotice)}`);
 }
 
-function addCollectionForAllStudents() {
-  const category = String(collectionForm.category || 'Uncategorized').trim() || 'Uncategorized';
-  const amount = Number(collectionForm.amount || 0);
-  const status = 'Unpaid';
+async function addCollectionForAllStudents() {
+  if (!canManageRecords.value) {
+    notify('Only admins can create department-wide bills.');
+    return;
+  }
 
-  if (!students.value.length) {
-    notify('No students found');
+  const category = String(collectionForm.category || '').trim();
+  const amount = Number(collectionForm.amount || 0);
+
+  if (!category) {
+    notify('Enter a bill category');
     return;
   }
 
@@ -2389,35 +2884,36 @@ function addCollectionForAllStudents() {
     return;
   }
 
-  if (category && !collectionCategories.value.includes(category)) {
-    collectionCategories.value.push(category);
-  }
-
-  for (const student of students.value) {
-    const receipt = status === 'Unpaid' ? `BILL-${nextReference('BILL')}` : nextReceipt();
-    collections.value.unshift({
-      id: nextId(collections.value),
-      receipt,
-      studentId: student.id,
-      category,
-      amount,
-      month: currentMonth(),
-      status,
-      fineId: null,
-      fineIds: [],
+  let bill;
+  try {
+    bill = await apiJson('/api/department-bills', {
+      method: 'POST',
+      body: JSON.stringify({ category, amount }),
     });
+    await loadBackendData();
+  } catch (error) {
+    notify(`Department bill could not be saved to the database: ${error instanceof Error ? error.message : 'API unavailable'}`);
+    return;
   }
 
-  logActivity('Bill', `${category} created for all students`, `${students.value.length} student(s) - ${money(amount)} each`);
+  const billNoticeResult = await sendTransactionEmailsToAll(
+    'New department bill',
+    `A new ${bill.category} bill of ${money(bill.amount)} has been added for each student.`,
+    { category: bill.category, amount: money(bill.amount), paymentStatus: 'Unpaid' },
+  );
+
+  logActivity('Bill', `${bill.category} set up for all students`, `${bill.assignedCount} current student(s); future students will also be assigned ${money(bill.amount)}`);
   collectionForm.category = '';
   collectionForm.amount = '';
   collectionForm.receipt = '';
-  collectionForm.status = status;
+  collectionForm.status = 'Unpaid';
   collectionStudentName.value = '';
   editingCollectionId.value = null;
   payingFineId.value = null;
   payingFineIds.value = [];
-  notify(`${category} created for ${students.value.length} student(s)`);
+  notify(`${bill.assignedCount
+    ? `${bill.category} created for ${bill.assignedCount} current student(s) and future students.`
+    : `${bill.category} saved; it will be assigned when students are added.`}${emailDeliverySummary(billNoticeResult)}`);
 }
 
 function currentPayingFineIds() {
@@ -2512,23 +3008,30 @@ function reconcileFinePayments() {
   });
 }
 
-function toggleCollectionStatus(collectionId) {
+async function toggleCollectionStatus(collectionId) {
   const collection = collections.value.find((item) => item.id === collectionId);
-  if (!collection) {
+  if (!collection || collection.backendType !== 'collectible') {
     return;
   }
 
-  if (collection.status !== 'Paid' && String(collection.receipt).startsWith('BILL-')) {
-    collection.status = 'Paid';
-    collection.receipt = nextReceipt();
-    syncLinkedFinePayments(collectionFineIds(collection), true);
-    logActivity('Bill', `Bill paid and converted to receipt`, studentName(collection.studentId));
-    notify('Bill paid and converted to receipt');
+  const nextStatus = collection.status === 'Paid' ? 'Unpaid' : 'Paid';
+  try {
+    await apiJson(`/api/collectibles/${collection.backendId}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        studentId: collection.studentId,
+        description: collection.category,
+        amountDue: Number(collection.amount),
+        dueDate: new Date().toISOString(),
+        isPaid: nextStatus === 'Paid',
+      }),
+    });
+  } catch (error) {
+    notify(`Bill status could not be updated: ${error instanceof Error ? error.message : 'API unavailable'}`);
     return;
   }
 
-  collection.status = collection.status === 'Paid' ? 'Unpaid' : 'Paid';
-  syncLinkedFinePayments(collectionFineIds(collection), collection.status === 'Paid');
+  collection.status = nextStatus;
   logActivity('Bill', `${collection.category} marked ${collection.status}`, studentName(collection.studentId));
   notify(`${collection.status === 'Paid' ? 'Bill marked paid' : 'Bill marked unpaid'}`);
 }
@@ -2543,40 +3046,85 @@ function editCollection(collection) {
   collectionForm.status = collection.status || 'Paid';
   collectionForm.studentId = collection.studentId;
   collectionStudentName.value = studentName(collection.studentId);
+  selectedCollectionStudentId.value = collection.studentId;
   receiptEmail.value = '';
   setView('collections');
 }
 
-function removeCollection(collectionId) {
+async function removeCollection(collectionId) {
   const collection = collections.value.find((item) => item.id === collectionId);
+  if (!collection) return;
+  try {
+    const endpoint = collection.backendType === 'collectible'
+      ? `/api/collectibles/${collection.backendId}`
+      : `/api/collections/${collection.backendId}`;
+    await apiJson(endpoint, { method: 'DELETE' });
+  } catch (error) {
+    notify(`Ledger entry could not be deleted: ${error instanceof Error ? error.message : 'API unavailable'}`);
+    return;
+  }
   syncLinkedFinePayments(collectionFineIds(collection), false);
   collections.value = collections.value.filter((item) => item.id !== collectionId);
   logActivity('Receipt', 'Receipt removed', 'Collection entry deleted');
   notify('Collection deleted');
 }
 
-function addFine() {
+async function addFine() {
+  if (!canManageRecords.value) {
+    notify('Only admins can add or edit fines.');
+    return;
+  }
+
   const typedName = String(fineStudentName.value || '').trim().toLowerCase();
   const matchedStudent = students.value.find((student) => student.name.toLowerCase() === typedName);
   const resolvedStudentId = matchedStudent ? matchedStudent.id : fineForm.studentId;
 
-  if (editingFineId.value) {
-    const existing = fines.value.find((f) => f.id === editingFineId.value);
-    if (existing) {
-      existing.studentId = resolvedStudentId;
-      existing.category = fineForm.category;
-      existing.amount = Number(fineForm.amount || 0);
-      existing.status = fineForm.status;
-    }
-  } else {
-    fines.value.unshift({
-      id: nextId(fines.value),
-      studentId: resolvedStudentId,
-      category: fineForm.category,
-      amount: Number(fineForm.amount || 0),
-      status: fineForm.status,
-    });
+  let savedFine;
+  try {
+    savedFine = await apiJson(
+      editingFineId.value ? `/api/fines/${editingFineId.value}` : '/api/fines',
+      {
+        method: editingFineId.value ? 'PUT' : 'POST',
+        body: JSON.stringify({
+          studentId: resolvedStudentId,
+          category: fineForm.category,
+          amount: Number(fineForm.amount || 0),
+          dateIssued: new Date().toISOString(),
+          remarks: '',
+          isPaid: fineForm.status === 'Paid',
+        }),
+      },
+    );
+  } catch (error) {
+    notify(`Fine could not be saved to the database: ${error instanceof Error ? error.message : 'API unavailable'}`);
+    return;
   }
+
+  const fineEntry = {
+    id: savedFine.id,
+    studentId: savedFine.studentId,
+    category: savedFine.category,
+    amount: Number(savedFine.amount),
+    status: savedFine.isPaid ? 'Paid' : 'Unpaid',
+    dateIssued: savedFine.dateIssued,
+    remarks: savedFine.remarks,
+  };
+  if (editingFineId.value) {
+    const index = fines.value.findIndex((fine) => fine.id === editingFineId.value);
+    if (index >= 0) fines.value[index] = fineEntry;
+  } else {
+    fines.value.unshift(fineEntry);
+  }
+  const fineNoticeResult = await sendTransactionEmailsToAll(
+    'Fine added',
+    `${studentName(resolvedStudentId)} has a new fine: ${fineForm.category} for ${money(fineForm.amount || 0)}.`,
+    {
+      category: fineForm.category,
+      amount: money(fineForm.amount || 0),
+      fineStatus: fineForm.status || 'Unpaid',
+      studentName: studentName(resolvedStudentId),
+    },
+  );
   logActivity('Fine', `${fineForm.category} fine added`, `${studentName(resolvedStudentId)} - ${money(fineForm.amount)}`);
   fineForm.category = '';
   fineForm.amount = '';
@@ -2584,10 +3132,10 @@ function addFine() {
   fineForm.studentId = resolvedStudentId;
   fineStudentName.value = '';
   editingFineId.value = null;
-  notify('Fine saved');
+  notify(`Fine saved.${emailDeliverySummary(fineNoticeResult)}`);
 }
 
-function toggleFine(fineId) {
+async function toggleFine(fineId) {
   const fine = fines.value.find((item) => item.id === fineId);
   if (!fine) {
     return;
@@ -2598,7 +3146,24 @@ function toggleFine(fineId) {
     return;
   }
 
-  fine.status = fine.status === 'Paid' ? 'Unpaid' : 'Paid';
+  const nextStatus = fine.status === 'Paid' ? 'Unpaid' : 'Paid';
+  try {
+    await apiJson(`/api/fines/${fine.id}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        studentId: fine.studentId,
+        category: fine.category,
+        amount: fine.amount,
+        dateIssued: fine.dateIssued,
+        remarks: fine.remarks || '',
+        isPaid: nextStatus === 'Paid',
+      }),
+    });
+  } catch (error) {
+    notify(`Fine status could not be updated: ${error instanceof Error ? error.message : 'API unavailable'}`);
+    return;
+  }
+  fine.status = nextStatus;
   logActivity('Fine', `${fine.category} marked ${fine.status}`, studentName(fine.studentId));
   notify(`Fine marked ${fine.status.toLowerCase()}`);
 }
@@ -2623,6 +3188,7 @@ function prepareFinePaymentGroup(fineGroup, message) {
   collectionForm.receipt = '';
   collectionForm.status = 'Paid';
   collectionStudentName.value = studentName(studentId);
+  selectedCollectionStudentId.value = student?.id ?? null;
   receiptEmail.value = student?.email || '';
   editingCollectionId.value = null;
   payingFineId.value = payableFines[0].id;
@@ -2667,7 +3233,13 @@ function editFine(fine) {
   setView('fines');
 }
 
-function removeFine(fineId) {
+async function removeFine(fineId) {
+  try {
+    await apiJson(`/api/fines/${fineId}`, { method: 'DELETE' });
+  } catch (error) {
+    notify(`Fine could not be deleted: ${error instanceof Error ? error.message : 'API unavailable'}`);
+    return;
+  }
   fines.value = fines.value.filter((fine) => fine.id !== fineId);
   logActivity('Fine', 'Fine removed', 'Fine record deleted');
   notify('Fine deleted');
@@ -2680,8 +3252,7 @@ async function addAttendance() {
     return;
   }
 
-  const activeEventTitle = (attendanceEvents.value.find((e) => e.id === currentAttendanceEventId.value)?.title) || attendanceForm.event;
-  addAttendanceLocal(activeEventTitle, attendanceForm.studentId, attendanceForm.status);
+  notify('Select a student loaded from the database before recording attendance.');
 }
 
 function addAttendanceLocal(event, studentId, status, recordedAt = new Date().toISOString()) {
@@ -2717,13 +3288,13 @@ function showAlreadyRecorded(student, event, record, method) {
   notify(`${student.name} already recorded`);
 }
 
-function createAttendanceEvent(title) {
+async function createAttendanceEvent(title) {
   const typedName = String(title || scanForm.eventTitle || '').trim();
   if (!typedName) {
     notify('Enter event name before starting attendance');
     return null;
   }
-  const existing = attendanceEvents.value.find((ev) => ev.title.toLowerCase() === typedName.toLowerCase());
+  const existing = attendanceEvents.value.find((ev) => ev.title.toLowerCase() === typedName.toLowerCase() && !ev.closedAt);
   if (existing) {
     currentAttendanceEventId.value = existing.id;
     scanForm.eventTitle = existing.title;
@@ -2731,19 +3302,37 @@ function createAttendanceEvent(title) {
     notify(`Event selected: ${existing.title}`);
     return existing;
   }
+  if (attendanceEvents.value.some((event) => event.title.toLowerCase() === typedName.toLowerCase() && event.closedAt)) {
+    notify('This event is already closed. Use a new event name to start another session.');
+    return null;
+  }
   const startDate = timeStringToDate(scanForm.openTime);
   const closeDate = scanForm.closeTime ? timeStringToDate(scanForm.closeTime, startDate) : new Date(startDate.getTime() + 60 * 60 * 1000);
-  const ev = {
-    id: nextId(attendanceEvents.value),
+  let ev;
+  try {
+    ev = await apiJson('/api/attendance/events', {
+      method: 'POST',
+      body: JSON.stringify({
+        title: typedName,
+        eventDate: new Date().toISOString(),
+        location: '',
+        description: '',
+        sessionType: scanForm.sessionType,
+        openAt: startDate.toISOString(),
+        lateAt: closeDate.toISOString(),
+        closeAt: closeDate.toISOString(),
+        absentFine: Number(scanForm.absentFine || 0),
+      }),
+    });
+  } catch (error) {
+    notify(`Event could not be started in the database: ${error instanceof Error ? error.message : 'API unavailable'}`);
+    return null;
+  }
+  ev = {
+    ...ev,
     title: typedName,
-    sessionType: scanForm.sessionType,
-    absentFine: Number(scanForm.absentFine || 0),
-    createdAt: new Date().toISOString(),
-    openAt: formatDateTimeLocal(startDate),
-    lateAt: formatDateTimeLocal(closeDate),
-    closeAt: formatDateTimeLocal(closeDate),
-    closedAt: null,
-    absentProcessed: false,
+    sessionType: ev.sessionType || scanForm.sessionType,
+    absentFine: Number(ev.absentFine || 0),
   };
   attendanceEvents.value.unshift(ev);
   currentAttendanceEventId.value = ev.id;
@@ -2771,15 +3360,24 @@ async function closeCurrentAttendanceEvent() {
     return;
   }
 
-  const result = applyAbsentFinesForEvent(ev);
+  let result;
+  try {
+    result = await apiJson(`/api/attendance/events/${ev.id}/close`, { method: 'POST' });
+  } catch (error) {
+    notify(`Event could not be closed in the database: ${error instanceof Error ? error.message : 'API unavailable'}`);
+    return;
+  }
+
   ev.closedAt = new Date().toISOString();
   ev.absentProcessed = true;
   currentAttendanceEventId.value = null;
   scanForm.eventTitle = '';
   searchTerm.value = '';
   activeView.value = 'fines';
+  const emailFines = (result.emailFines || []).map((fine) => ({ ...fine, status: fine.isPaid ? 'Paid' : 'Unpaid' }));
+  await loadBackendData();
   const attendanceEmailResult = await sendAttendanceConfirmationEmails(ev);
-  const emailResult = await sendAbsentFineEmails(ev, result.emailFines);
+  const emailResult = await sendAbsentFineEmails(ev, emailFines);
   const emailText = emailResult.total > 0
     ? ` ${emailResult.sent}/${emailResult.total} email(s) sent now, ${emailResult.queued} queued.`
     : emailResult.noEmail > 0
@@ -2791,63 +3389,6 @@ async function closeCurrentAttendanceEvent() {
       ? ` ${attendanceEmailResult.noEmail} present student(s) have no email address.`
       : '';
   notify(`Event closed. ${result.absentCount} absent, ${result.fineCount} fine(s) added.${attendanceEmailText}${emailText}`);
-}
-
-function applyAbsentFinesForEvent(event) {
-  const eventTitle = event.title;
-  const absentFine = Number(event.absentFine || 0);
-  const category = `Absent - ${eventTitle}${event.sessionType ? ` (${event.sessionType})` : ''}`;
-  const closedAt = new Date().toISOString();
-  const addedFines = [];
-  const emailFines = [];
-  let absentCount = 0;
-  let fineCount = 0;
-
-  for (const student of students.value) {
-    const existingRecord = attendanceRecords.value.find(
-      (record) => record.event === eventTitle && record.studentId === student.id,
-    );
-
-    if (existingRecord && existingRecord.status !== 'Absent') {
-      continue;
-    }
-
-    if (!existingRecord) {
-      addAttendanceLocal(eventTitle, student.id, 'Absent', closedAt);
-      absentCount += 1;
-    }
-
-    const existingFine = fines.value.find(
-      (fine) => fine.studentId === student.id && fine.category === category,
-    );
-
-    if (existingFine) {
-      if (!existingFine.emailNoticeSentAt) {
-        emailFines.push(existingFine);
-      }
-      continue;
-    }
-
-    const fine = {
-      id: nextId(fines.value),
-      studentId: student.id,
-      category,
-      amount: absentFine,
-      status: 'Unpaid',
-      emailNoticeSentAt: null,
-    };
-
-    fines.value.unshift(fine);
-    addedFines.push(fine);
-    emailFines.push(fine);
-    fineCount += 1;
-  }
-
-  if (absentCount > 0) {
-    logActivity('Attendance', `${eventTitle} closed`, `${absentCount} absent student(s), ${fineCount} fine(s) added`);
-  }
-
-  return { absentCount, fineCount, addedFines, emailFines };
 }
 
 async function sendAbsentFineEmails(event, addedFines) {
@@ -2935,6 +3476,60 @@ async function sendComposedEmails() {
   notify(`${sent}/${targets.length} email(s) sent now, ${queued} queued`);
 }
 
+async function sendTransactionEmailsToAll(subject, message, extra = {}) {
+  const targets = studentsWithEmail.value;
+  let sent = 0;
+  let queued = 0;
+  const createdAt = Date.now();
+
+  for (const student of targets) {
+    const payload = {
+      toEmail: student.email,
+      studentName: student.name,
+      subject,
+      message,
+      ...extra,
+      date: new Date().toLocaleString(),
+    };
+
+    const id = `transaction-email-${createdAt}-${student.id}`;
+    const sendResult = await sendGeneralMessagePayload(payload);
+
+    if (sendResult.ok) {
+      recordSentEmail(id, null, payload, 'transaction-email');
+      sent += 1;
+    } else {
+      queueEmail(id, 'transaction-email', null, payload, sendResult.error);
+      queued += 1;
+    }
+  }
+
+  return {
+    sent,
+    queued,
+    total: targets.length,
+    noEmail: students.value.length - targets.length,
+  };
+}
+
+function emailDeliverySummary(result) {
+  if (!result?.total && !result?.noEmail) {
+    return ' No student email addresses are available.';
+  }
+
+  const parts = [];
+  if (result.total) {
+    parts.push(`${result.sent}/${result.total} sent`);
+  }
+  if (result.queued) {
+    parts.push(`${result.queued} queued for retry`);
+  }
+  if (result.noEmail) {
+    parts.push(`${result.noEmail} student(s) have no email address`);
+  }
+  return ` Email: ${parts.join(', ')}.`;
+}
+
 async function sendFineNoticePayload(payload) {
   try {
     const response = await apiFetch('/api/email/fine-notice', {
@@ -2969,7 +3564,7 @@ async function sendGeneralMessagePayload(payload) {
   }
 }
 
-async function sendAttendanceConfirmationEmail(student, eventTitle, status, recordedAt, method) {
+async function sendAttendanceConfirmationEmail(student, eventTitle, status, recordedAt, method, sessionType = 'Log In') {
   if (!String(student?.email || '').trim()) {
     return { sent: false, queued: false, noEmail: true };
   }
@@ -2981,11 +3576,17 @@ async function sendAttendanceConfirmationEmail(student, eventTitle, status, reco
   const payload = {
     toEmail: student.email,
     studentName: student.name,
-    subject: `Attendance recorded - ${eventTitle}`,
-    message: `Thank you for attending ${eventTitle}.\n\nYour attendance has been recorded for this event.\n\nStatus: ${status}\nRecorded at: ${formatRecordTime(recordedAt) || new Date().toLocaleString()}\nMethod: ${method}\n\nPlease keep this email as proof of your attendance for future reference.`,
+    subject: `${sessionType} recorded - ${eventTitle}`,
+    message: `Your ${sessionType.toLowerCase()} has been recorded for ${eventTitle}.\n\nStatus: ${status}\nRecorded at: ${formatRecordTime(recordedAt) || new Date().toLocaleString()}\nMethod: ${method}\n\nPlease keep this email for your records.`,
     date: new Date().toLocaleString(),
   };
   const id = `attendance-confirmation-${eventTitle}-${student.id}`.replace(/\s+/g, '-').toLowerCase();
+  if (sentEmails.value.some((email) => email.id === id)) {
+    return { sent: true, queued: false, noEmail: false };
+  }
+  if (pendingEmails.value.some((email) => email.id === id)) {
+    return { sent: false, queued: true, noEmail: false };
+  }
   const sendResult = await sendGeneralMessagePayload(payload);
 
   if (sendResult.ok) {
@@ -3019,6 +3620,7 @@ async function sendAttendanceConfirmationEmails(event) {
       item.record.status,
       item.record.recordedAt,
       'Event close',
+      event.sessionType || 'Log In',
     );
 
     if (result.sent) {
@@ -3111,7 +3713,7 @@ async function startQrScanner() {
   // Ensure an attendance event exists before starting continuous scanning
   if (!currentAttendanceEventId.value) {
     // create a new event using the scanForm eventTitle (or default)
-    const event = createAttendanceEvent(scanForm.eventTitle);
+    const event = await createAttendanceEvent(scanForm.eventTitle);
     if (!event) {
       return;
     }
@@ -3254,16 +3856,11 @@ async function recordQrScan(rawValue, options = {}) {
     showScanPop(student, recordedStatus, result.event || eventTitle, 'QR / Student ID');
     savedRemotely = true;
   } catch (error) {
-    const localResult = addAttendanceLocal(eventTitle, student.id, recordedStatus);
-    alreadyRecorded = !localResult?.created;
-    if (alreadyRecorded) {
-      manualQr.value = '';
-      clearQuickScan();
-      showAlreadyRecorded(student, eventTitle, localResult?.record || findAttendanceRecord(eventTitle, student.id), 'QR / Student ID');
-      return;
-    }
-    showScanPop(student, recordedStatus, eventTitle, 'QR / Student ID');
-    scannerMessage.value = `${student.name} saved locally. Backend scan failed: ${error instanceof Error ? error.message : 'Unable to reach backend'}`;
+    manualQr.value = '';
+    clearQuickScan();
+    scannerMessage.value = `${student.name} was not recorded. Database error: ${error instanceof Error ? error.message : 'Unable to reach backend'}`;
+    notify('Attendance was not saved to the database');
+    return;
   }
 
   manualQr.value = '';
@@ -3274,13 +3871,29 @@ async function recordQrScan(rawValue, options = {}) {
   }
 
   if (!scannerMessage.value.includes('Fine added')) {
-    scannerMessage.value = savedRemotely
-      ? `${student.name} recorded for ${eventTitle}.`
-      : `${student.name} saved locally for ${eventTitle}.`;
+    scannerMessage.value = `${student.name} recorded in the database for ${eventTitle}.`;
   }
 
+  const attendanceEmailResult = await sendAttendanceConfirmationEmail(
+    student,
+    eventTitle,
+    recordedStatus,
+    findAttendanceRecord(eventTitle, student.id)?.recordedAt,
+    'QR / Student ID',
+    activeAttendanceEvent.value?.sessionType || scanForm.sessionType,
+  );
+  const attendanceEmailNote = recordedStatus === 'Absent'
+    ? ''
+    : emailDeliverySummary({
+        sent: attendanceEmailResult.sent ? 1 : 0,
+        queued: attendanceEmailResult.queued ? 1 : 0,
+        total: attendanceEmailResult.noEmail ? 0 : 1,
+        noEmail: attendanceEmailResult.noEmail ? 1 : 0,
+      });
+  scannerMessage.value += attendanceEmailNote;
+
   if (!options.silent) {
-    notify(savedRemotely ? `${student.name} attendance recorded` : `${student.name} attendance saved locally`);
+    notify(`${student.name} attendance recorded.${attendanceEmailNote}`);
   }
 }
 
@@ -3385,16 +3998,11 @@ async function recordRfidScan(rawValue) {
     showScanPop(student, recordedStatus, result.event || eventTitle, 'RFID');
     savedRemotely = true;
   } catch (error) {
-    const localResult = addAttendanceLocal(eventTitle, student.id, recordedStatus);
-    alreadyRecorded = !localResult?.created;
-    if (alreadyRecorded) {
-      manualRfid.value = '';
-      clearQuickScan();
-      showAlreadyRecorded(student, eventTitle, localResult?.record || findAttendanceRecord(eventTitle, student.id), 'RFID');
-      return;
-    }
-    showScanPop(student, recordedStatus, eventTitle, 'RFID');
-    scannerMessage.value = `${student.name} saved locally. Backend RFID failed: ${error instanceof Error ? error.message : 'Unable to reach backend'}`;
+    manualRfid.value = '';
+    clearQuickScan();
+    scannerMessage.value = `${student.name} was not recorded. Database error: ${error instanceof Error ? error.message : 'Unable to reach backend'}`;
+    notify('Attendance was not saved to the database');
+    return;
   }
 
   manualRfid.value = '';
@@ -3405,11 +4013,27 @@ async function recordRfidScan(rawValue) {
   }
 
   if (!scannerMessage.value.includes('Fine added')) {
-    scannerMessage.value = savedRemotely
-      ? `${student.name} recorded by RFID for ${eventTitle}.`
-      : `${student.name} saved locally by RFID for ${eventTitle}.`;
+    scannerMessage.value = `${student.name} recorded by RFID in the database for ${eventTitle}.`;
   }
-  notify(savedRemotely ? `${student.name} RFID attendance recorded` : `${student.name} RFID attendance saved locally`);
+
+  const attendanceEmailResult = await sendAttendanceConfirmationEmail(
+    student,
+    eventTitle,
+    recordedStatus,
+    findAttendanceRecord(eventTitle, student.id)?.recordedAt,
+    'RFID',
+    activeAttendanceEvent.value?.sessionType || scanForm.sessionType,
+  );
+  const attendanceEmailNote = recordedStatus === 'Absent'
+    ? ''
+    : emailDeliverySummary({
+        sent: attendanceEmailResult.sent ? 1 : 0,
+        queued: attendanceEmailResult.queued ? 1 : 0,
+        total: attendanceEmailResult.noEmail ? 0 : 1,
+        noEmail: attendanceEmailResult.noEmail ? 1 : 0,
+      });
+  scannerMessage.value += attendanceEmailNote;
+  notify(`${student.name} RFID attendance recorded.${attendanceEmailNote}`);
 }
 
 async function recordAnyScan(rawValue) {
@@ -3484,39 +4108,83 @@ async function responseMessage(response) {
   }
 }
 
-function removeAttendance(recordId) {
+async function removeAttendance(recordId) {
+  try {
+    await apiJson(`/api/attendance/${recordId}`, { method: 'DELETE' });
+  } catch (error) {
+    notify(`Attendance record could not be deleted: ${error instanceof Error ? error.message : 'Database unavailable'}`);
+    return;
+  }
   attendanceRecords.value = attendanceRecords.value.filter((record) => record.id !== recordId);
   logActivity('Attendance', 'Attendance removed', 'Attendance record deleted');
   notify('Attendance deleted');
 }
 
-function addDisbursement() {
-  if (editingDisbursementId.value) {
-    const existing = disbursements.value.find((d) => d.id === editingDisbursementId.value);
-    if (existing) {
-      existing.description = disbursementForm.description;
-      existing.usedBy = disbursementForm.usedBy;
-      existing.amount = Number(disbursementForm.amount || 0);
-      existing.month = currentMonth();
-    }
-  } else {
-    disbursements.value.unshift({
-      id: nextId(disbursements.value),
-      description: disbursementForm.description,
-      usedBy: disbursementForm.usedBy,
-      amount: Number(disbursementForm.amount || 0),
-      month: currentMonth(),
-    });
+async function addDisbursement() {
+  if (!canManageRecords.value) {
+    notify('Only admins can manage disbursements.');
+    return;
   }
+
+  let savedExpense;
+  try {
+    savedExpense = await apiJson(
+      editingDisbursementId.value ? `/api/disbursements/${editingDisbursementId.value}` : '/api/disbursements',
+      {
+        method: editingDisbursementId.value ? 'PUT' : 'POST',
+        body: JSON.stringify({
+          payee: disbursementForm.usedBy || authUser.username,
+          amount: Number(disbursementForm.amount || 0),
+          dateReleased: new Date().toISOString(),
+          purpose: disbursementForm.description,
+          documentPath: '',
+          isApproved: true,
+        }),
+      },
+    );
+  } catch (error) {
+    notify(`Expense could not be saved to the database: ${error instanceof Error ? error.message : 'API unavailable'}`);
+    return;
+  }
+
+  const expenseEntry = {
+    id: savedExpense.id,
+    backendId: savedExpense.id,
+    description: savedExpense.purpose,
+    usedBy: savedExpense.payee,
+    amount: Number(savedExpense.amount),
+    month: new Date(savedExpense.dateReleased).toLocaleString('en-US', { month: 'short' }),
+  };
+  if (editingDisbursementId.value) {
+    const index = disbursements.value.findIndex((expense) => expense.id === editingDisbursementId.value);
+    if (index >= 0) disbursements.value[index] = expenseEntry;
+  } else {
+    disbursements.value.unshift(expenseEntry);
+  }
+  const expenseNoticeResult = await sendTransactionEmailsToAll(
+    'Department expense update',
+    `${disbursementForm.description} was recorded for ${disbursementForm.usedBy || 'the department'} in the amount of ${money(disbursementForm.amount || 0)}.`,
+    {
+      description: disbursementForm.description,
+      usedBy: disbursementForm.usedBy || 'Not specified',
+      amount: money(disbursementForm.amount || 0),
+    },
+  );
   logActivity('Expense', `${disbursementForm.description} recorded`, `${disbursementForm.usedBy || 'Not specified'} - ${money(disbursementForm.amount)}`);
   disbursementForm.description = 'Department expense';
   disbursementForm.usedBy = '';
   disbursementForm.amount = 100;
   editingDisbursementId.value = null;
-  notify('Expense saved');
+  notify(`Expense saved.${emailDeliverySummary(expenseNoticeResult)}`);
 }
 
-function removeDisbursement(disbursementId) {
+async function removeDisbursement(disbursementId) {
+  try {
+    await apiJson(`/api/disbursements/${disbursementId}`, { method: 'DELETE' });
+  } catch (error) {
+    notify(`Expense could not be deleted: ${error instanceof Error ? error.message : 'API unavailable'}`);
+    return;
+  }
   disbursements.value = disbursements.value.filter((item) => item.id !== disbursementId);
   logActivity('Expense', 'Expense removed', 'Disbursement record deleted');
   notify('Expense deleted');
@@ -3593,83 +4261,21 @@ function windowPrint() {
   window.print();
 }
 
-function saveState() {
-  localStorage.setItem(
-    storageKey,
-    JSON.stringify({
-      students: students.value,
-      collections: collections.value,
-      fines: fines.value,
-      attendanceEvents: attendanceEvents.value,
-      currentAttendanceEventId: currentAttendanceEventId.value,
-      attendanceRecords: attendanceRecords.value,
-      disbursements: disbursements.value,
-      activity: activity.value,
-      pendingEmails: pendingEmails.value,
-      sentEmails: sentEmails.value,
-    }),
-  );
+function saveEmailQueue() {
+  localStorage.setItem(emailQueueStorageKey, JSON.stringify({
+    pendingEmails: pendingEmails.value,
+    sentEmails: sentEmails.value,
+  }));
 }
 
-function loadState() {
-  const stored = localStorage.getItem(storageKey);
-  if (!stored) {
-    students.value = [];
-    collections.value = [];
-    fines.value = [];
-    attendanceEvents.value = [];
-    currentAttendanceEventId.value = null;
-    attendanceRecords.value = [];
-    disbursements.value = [];
-    activity.value = [];
+function loadEmailQueue() {
+  try {
+    const savedQueue = JSON.parse(localStorage.getItem(emailQueueStorageKey) || '{}');
+    pendingEmails.value = Array.isArray(savedQueue.pendingEmails) ? savedQueue.pendingEmails : [];
+    sentEmails.value = Array.isArray(savedQueue.sentEmails) ? savedQueue.sentEmails : [];
+  } catch {
     pendingEmails.value = [];
     sentEmails.value = [];
-    return;
-  }
-
-  try {
-    const parsed = JSON.parse(stored);
-    students.value = Array.isArray(parsed.students)
-      ? parsed.students.map((student) => normalizeStudentRecord(student))
-      : [];
-    collections.value = Array.isArray(parsed.collections) ? parsed.collections : [];
-    fines.value = Array.isArray(parsed.fines) ? parsed.fines : [];
-    attendanceEvents.value = Array.isArray(parsed.attendanceEvents) ? parsed.attendanceEvents : [];
-    currentAttendanceEventId.value = parsed.currentAttendanceEventId || null;
-    attendanceRecords.value = Array.isArray(parsed.attendanceRecords) ? parsed.attendanceRecords : [];
-    disbursements.value = Array.isArray(parsed.disbursements) ? parsed.disbursements : [];
-    activity.value = Array.isArray(parsed.activity) ? parsed.activity : [];
-    pendingEmails.value = Array.isArray(parsed.pendingEmails) ? parsed.pendingEmails : [];
-    sentEmails.value = Array.isArray(parsed.sentEmails) ? parsed.sentEmails : [];
-    if (currentAttendanceEventId.value) {
-      const activeEvent = attendanceEvents.value.find((event) => event.id === currentAttendanceEventId.value);
-      if (activeEvent) {
-        scanForm.eventTitle = activeEvent.title;
-      }
-    }
-  } catch {
-    resetState();
-  }
-}
-
-function resetState() {
-  students.value = [];
-  collections.value = [];
-  fines.value = [];
-  attendanceRecords.value = [];
-  disbursements.value = [];
-  activity.value = [];
-  pendingEmails.value = [];
-  sentEmails.value = [];
-  selectedStudentId.value = null;
-  resetStudentForm();
-  localStorage.removeItem(storageKey);
-  notify('State reset');
-}
-
-function confirmResetState() {
-  if (confirm('This will delete all local app records and start fresh. Proceed?')) {
-    resetState();
   }
 }
 </script>
@@ -3833,6 +4439,42 @@ button {
   margin-bottom: 18px;
 }
 
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.user-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 7px 10px;
+  border: 1px solid #dbe5e8;
+  border-radius: 6px;
+  color: #33454e;
+  background: #ffffff;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.user-role {
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: #edf3f1;
+  color: #43635d;
+  font-size: 0.8rem;
+}
+
+.login-toggle {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 .eyebrow {
   margin: 0 0 6px;
   color: #60717a;
@@ -3876,11 +4518,37 @@ h2 {
   gap: 6px;
 }
 
+.panel.event-creator-panel .event-name-label {
+  color: #0f766e;
+  font-size: 0.95rem;
+  font-weight: 800;
+}
+
+.panel.event-creator-panel .event-name-label input {
+  border-color: #7bb8ae;
+}
+
 .panel.event-creator-panel .event-details-grid {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr);
-  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
   align-items: end;
+}
+
+.event-state {
+  flex: 0 0 auto;
+  padding: 6px 9px;
+  border-radius: 6px;
+  background: #edf1f3;
+  color: #586a72;
+  font-size: 0.78rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.event-state.active {
+  background: #e3f4ec;
+  color: #166534;
 }
 
 .panel.event-creator-panel .button-row {
@@ -3889,6 +4557,12 @@ h2 {
   gap: 10px;
   align-items: center;
   margin-top: 0;
+}
+
+.event-start-actions .primary-action,
+.event-start-actions .secondary-action {
+  width: auto;
+  min-width: 140px;
 }
 
 .qr-scanner-grid {
@@ -4132,6 +4806,99 @@ textarea {
   resize: vertical;
 }
 
+.welcome-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 32px 20px;
+  background:
+    radial-gradient(circle at top, rgba(15, 118, 110, 0.12), transparent 35%),
+    linear-gradient(135deg, #eef7f8 0%, #f7faf8 48%, #edf2f9 100%);
+}
+
+.welcome-card {
+  width: min(560px, 100%);
+  display: grid;
+  gap: 20px;
+  padding: 36px 32px;
+  border: 1px solid rgba(15, 118, 110, 0.12);
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 24px 48px rgba(20, 32, 39, 0.12);
+  text-align: center;
+}
+
+.welcome-badge {
+  justify-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 140px;
+  padding: 10px 18px;
+  border-radius: 999px;
+  background: #e0f4f2;
+  color: #0f766e;
+  font-size: 0.84rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.welcome-card h1 {
+  margin: 0;
+  font-size: clamp(2rem, 3vw, 2.8rem);
+  line-height: 1.15;
+}
+
+.welcome-card p {
+  margin: 0;
+  color: #52616b;
+  font-size: 1rem;
+  line-height: 1.6;
+}
+
+.welcome-actions {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.welcome-actions .primary-action,
+.welcome-actions .secondary-action {
+  min-width: 180px;
+  min-height: 48px;
+  font-size: 1rem;
+}
+
+.welcome-credentials {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 8px;
+}
+
+.welcome-credentials > div {
+  display: grid;
+  gap: 6px;
+  border: 1px solid #dfe8eb;
+  border-radius: 16px;
+  padding: 16px 14px;
+  background: #f8fbfc;
+  color: #33454e;
+  text-align: left;
+}
+
+.welcome-credentials strong {
+  color: #142027;
+  font-size: 0.98rem;
+}
+
+.welcome-credentials span {
+  font-size: 0.9rem;
+  color: #4e5f6a;
+}
+
 .auth-overlay {
   position: fixed;
   inset: 0;
@@ -4317,6 +5084,85 @@ textarea {
   grid-template-columns: 320px minmax(0, 1fr);
 }
 
+.data-layout.single-column-layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.students-layout {
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+  grid-template-areas:
+    "form options"
+    "directory directory";
+  align-items: start;
+}
+
+.students-layout > .form-panel {
+  grid-area: form;
+}
+
+.academic-options-panel {
+  grid-area: options;
+  min-width: 0;
+}
+
+.academic-options-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  padding: 20px;
+}
+
+.student-directory-panel {
+  grid-area: directory;
+  min-width: 0;
+}
+
+.academic-option-form {
+  display: grid;
+  gap: 14px;
+}
+
+.academic-option-form h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.academic-option-form label {
+  display: grid;
+  gap: 6px;
+  color: #60717a;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.academic-option-form input {
+  width: 100%;
+  min-width: 0;
+}
+
+.academic-option-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.academic-option-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 0;
+  border-bottom: 1px solid #edf1f3;
+}
+
+.academic-option-list li > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .collections-page {
   display: grid;
   gap: 20px;
@@ -4387,6 +5233,38 @@ textarea {
 
 .attendance-list-panel tbody tr:hover {
   background: #eef7f4;
+}
+
+.attendance-table-wrap {
+  width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.attendance-records-table {
+  min-width: 620px;
+  table-layout: fixed;
+}
+
+.attendance-records-table th:nth-child(1) { width: 24%; }
+.attendance-records-table th:nth-child(2) { width: 24%; }
+.attendance-records-table th:nth-child(3) { width: 14%; }
+.attendance-records-table th:nth-child(4) { width: 24%; }
+.attendance-records-table th:nth-child(5) { width: 14%; }
+
+.attendance-records-table .attendance-empty-cell {
+  padding: 28px 16px;
+  color: #60717a;
+  text-align: center;
+}
+
+.attendance-rate {
+  min-width: 58px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: #edf8f6;
+  color: #0f766e;
+  text-align: center;
 }
 
 .badge.neutral {
@@ -4478,6 +5356,14 @@ textarea {
   display: grid;
   grid-template-columns: minmax(180px, 260px) minmax(0, 1fr);
   min-height: 360px;
+}
+
+.absent-fines-empty {
+  min-height: 180px;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  text-align: center;
 }
 
 .student-name-list {
@@ -4606,37 +5492,57 @@ textarea {
 table {
   width: 100%;
   border-collapse: collapse;
+  table-layout: auto;
+}
+
+th,
+td {
+  padding: 14px 20px;
+  border-bottom: 1px solid #edf1f3;
+  text-align: left;
+  vertical-align: top;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .student-directory-wrap {
   width: 100%;
   min-width: 0;
+  overflow-x: auto;
 }
 
 .student-directory-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
   table-layout: fixed;
 }
 
+.student-directory-table tbody tr {
+  vertical-align: middle;
+}
+
 .student-directory-table th:nth-child(1) {
-  width: 29%;
+  width: 36%;
 }
 
 .student-directory-table th:nth-child(2) {
-  width: 27%;
+  width: 28%;
 }
 
 .student-directory-table th:nth-child(3) {
-  width: 15%;
+  width: 16%;
 }
 
 .student-directory-table th:nth-child(4) {
-  width: 29%;
+  width: 20%;
 }
 
 .student-directory-table th,
 .student-directory-table td {
   padding: 16px 12px;
   overflow-wrap: anywhere;
+  vertical-align: middle;
 }
 
 .student-primary-cell,
@@ -4647,17 +5553,14 @@ table {
   gap: 5px;
 }
 
+.student-contact-cell span,
+.student-balance-cell strong {
+  line-height: 1.3;
+}
+
 .student-directory-table td small {
   color: #60717a;
   font-size: 0.82rem;
-}
-
-th,
-td {
-  padding: 14px 20px;
-  border-bottom: 1px solid #edf1f3;
-  text-align: left;
-  vertical-align: middle;
 }
 
 th {
@@ -4682,12 +5585,15 @@ tbody tr:hover {
 
 .student-directory-table .table-actions {
   gap: 6px;
+  justify-content: flex-end;
+  align-items: center;
 }
 
 .student-directory-table .table-actions button {
   padding: 8px 10px;
   font-size: 0.78rem;
   white-space: normal;
+  min-height: 34px;
 }
 
 .student-info-heading {
@@ -4884,10 +5790,16 @@ tbody tr:hover {
 }
 
 .autocomplete-list li {
+  display: grid;
+  gap: 3px;
   border-radius: 6px;
   padding: 8px 10px;
   color: #142027;
   cursor: pointer;
+}
+
+.autocomplete-list li small {
+  color: #60717a;
 }
 
 .autocomplete-list li:hover {
@@ -5281,6 +6193,18 @@ tbody tr:hover {
     height: auto;
   }
 
+  .students-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "form"
+      "options"
+      "directory";
+  }
+
+  .panel.event-creator-panel .event-details-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .toolbar {
     width: 100%;
     flex-wrap: wrap;
@@ -5331,6 +6255,24 @@ tbody tr:hover {
 }
 
 @media (max-width: 640px) {
+  .academic-options-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .panel.event-creator-panel .event-details-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .event-start-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .event-start-actions .primary-action,
+  .event-start-actions .secondary-action {
+    width: 100%;
+  }
+
   .student-directory-table,
   .student-directory-table tbody {
     display: block;
